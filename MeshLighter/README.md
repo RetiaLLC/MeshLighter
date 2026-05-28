@@ -47,15 +47,15 @@ pip install pycryptodome pyserial cryptography websockets
 ### 3. Spoofing & Injecting Nodes
 Use `ClownCar2.py` to populate the mesh with virtual, verified identities:
 ```bash
-export PYTHONPATH=client:.
+export PYTHONPATH=toolkit/client:.
 # Inject 10 verified nodes with unique Ed25519 keys
-python3 client/ClownCar2.py /dev/ttyACM0 --name "ResearchNode" --count 10
+python3 toolkit/client/ClownCar2.py /dev/ttyACM0 --name "ResearchNode" --count 10
 ```
 
 ### 4. Sending Custom Messages
 ```bash
 # Send a direct text message from a spoofed ID
-python3 client/tx_real.py /dev/ttyACM0 "Hello from the Neural Mesh"
+python3 toolkit/client/tx_real.py /dev/ttyACM0 "Hello from the Neural Mesh"
 ```
 
 ### 5. Monitoring & Visualization
