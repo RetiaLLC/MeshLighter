@@ -68,12 +68,12 @@ Launch the **Neural Mesh V3.9** dashboard to see traffic flowing around you:
 
 ---
 
-## 🛰 Visualization Aesthetic
-The **Advanced Visualizer** is designed to reveal the "social" structure of the mesh:
-- **Chirp Nexuses:** Rotating icons inspired by LoRa spread spectrum modulation.
-- **Neural Bonds:** Persistent glowing lines connect nodes that talk to each other.
-- **Source Tethers:** Every packet in flight is anchored to its origin station.
-- **Tactical Bubbles:** Decoded text messages appear in high-contrast, multi-line speech bubbles.
+## 🛰 Visualizer Mechanics
+The Advanced Visualizer translates raw RF traffic into a real-time map based on packet metadata:
+- **Nodes:** Represented by rotating arcs. A force-directed physics engine spaces them apart to prevent UI overlap. When a node announces itself (`NodeInfo`), it moves to the center of the screen for 20 seconds.
+- **Packets:** Particle size is directly scaled by RSSI (signal strength). Colors indicate packet type: Purple (`NodeInfo`), Orange (`Text`), Cyan (`Position`), Green (`Telemetry`), and Red (`System Sync`).
+- **Routing Topology:** Moving packets draw a line back to their origin node. Directed messages between two nodes create a persistent link connecting them to map active communication paths.
+- **Text Messages:** Decoded text payloads are displayed in anchored, multi-line boxes above the transmitting node for 15 seconds.
 
 ---
 
