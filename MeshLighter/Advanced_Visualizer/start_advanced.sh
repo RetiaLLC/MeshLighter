@@ -2,6 +2,12 @@
 
 # MeshLighter Advanced Visualizer Startup Script
 
+# Determine project root based on script location
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$( cd "$DIR/.." && pwd )"
+
+cd "$PROJECT_ROOT"
+
 PORT="/dev/ttyACM0"
 if [ ! -z "$1" ]; then
     PORT="$1"
@@ -9,13 +15,19 @@ fi
 
 echo "[*] Starting MeshLighter ADVANCED Visualizer on $PORT..."
 
+if [ ! -f "toolkit/venv/bin/python3" ]; then
+    echo "[!] Python virtual environment not found at toolkit/venv!"
+    echo "[!] Please run the setup instructions in the README first."
+    exit 1
+fi
+
 # 1. Start the WebSocket Backend
-export PYTHONPATH=toolkit/client:client:.
-./venv/bin/python3 MeshLighter/Advanced_Visualizer/visual_server.py "$PORT" --log &
+export PYTHONPATH=toolkit/client:.
+./toolkit/venv/bin/python3 Advanced_Visualizer/visual_server.py "$PORT" --log &
 BACKEND_PID=$!
 
 # 2. Start a simple HTTP server for the Frontend
-cd MeshLighter/Advanced_Visualizer
+cd Advanced_Visualizer
 python3 -m http.server 8002 &
 FRONTEND_PID=$!
 

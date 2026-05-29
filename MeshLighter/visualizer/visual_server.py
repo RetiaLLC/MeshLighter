@@ -7,9 +7,8 @@ import websockets
 import json
 import threading
 
-# Add parent and toolkit paths
+# Add toolkit path
 sys.path.append(os.path.join(os.getcwd(), 'toolkit/client'))
-sys.path.append(os.path.join(os.getcwd(), 'client'))
 
 from mt_radio_serial import mt_radio_serial
 from mt_lite import mt_lite

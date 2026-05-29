@@ -30,18 +30,31 @@ By running a minimalist firmware core, the Nibble acts as a raw modem that simpl
 ## 🚀 Quickstart Guide
 
 ### 1. Hardware Preparation
-1. Connect your **Waveshare ESP32-S3 Zero** (Nibble) with an **SX1262** LoRa module.
-2. Flash the factory binary:
-   ```bash
-   esptool.py --chip esp32s3 write_flash 0x0 binaries/nibble_zero_factory.bin
-   ```
+#### Option A: Quick Flash (Nibble Zero Only)
+If you have a Waveshare ESP32-S3 Zero (Nibble), use the pre-compiled factory binary for immediate deployment:
+```bash
+# Using esptool (from the binaries/ folder)
+esptool.py --chip esp32s3 write_flash 0x0 binaries/nibble_zero_factory.bin
+```
 
-### 2. Toolkit Environment
+#### Option B: Compile from Source (Any Supported Board)
+If you want to modify the firmware or compile for a different board (like the Heltec V3 or T-Beam):
+1. Install [PlatformIO](https://platformio.org/) via VSCode or the CLI.
+2. Open the `firmware/` directory.
+3. Build and upload using the CLI:
+   ```bash
+   cd firmware
+   pio run -e nibble_zero -t upload
+   ```
+*(Available environments in `platformio.ini`: `nibble_zero`, `heltec_v3`, `heltec_v4`, `nugget_connect`)*
+
+### 2. Setup the Toolkit
+Requires Python 3.10+
 ```bash
 cd toolkit
 python3 -m venv venv
 source venv/bin/activate
-pip install pycryptodome pyserial cryptography websockets
+pip install -r requirements.txt
 ```
 
 ### 3. Spoofing & Injecting Nodes

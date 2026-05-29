@@ -1,0 +1,4 @@
+pyserial>=3.5
+pycryptodome>=3.17
+cryptography>=41.0
+websockets>=11.0
