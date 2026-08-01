@@ -52,9 +52,34 @@ uint64_t led_off_time = 0;
 uint64_t neopixel_off_time = 0;
 int rx_count = 0;
 int tx_count = 0;
+bool radio_ok = false;   // set true only if the SX1262 initialises
+
+// Non-blocking presence check for the SX1262: reset, wait (bounded) for BUSY to
+// fall, then read GetStatus. Prevents radio.begin() from hanging forever on a
+// board that has no SX1262 at these pins (old firmware sat in while(true)).
+static bool probe_radio() {
+  pinMode(SS, OUTPUT);       digitalWrite(SS, HIGH);
+  pinMode(RST_LoRa, OUTPUT);
+  pinMode(BUSY_LoRa, INPUT);
+  digitalWrite(RST_LoRa, LOW);  delay(2);
+  digitalWrite(RST_LoRa, HIGH);
+  uint32_t t0 = millis();
+  while (digitalRead(BUSY_LoRa) == HIGH) {     // a present chip releases BUSY
+    if (millis() - t0 > 100) return false;
+    delay(1);
+  }
+  hspi.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(SS, LOW);
+  hspi.transfer(0xC0);                          // GetStatus opcode
+  uint8_t st = hspi.transfer(0x00);
+  digitalWrite(SS, HIGH);
+  hspi.endTransaction();
+  return (st != 0x00 && st != 0xFF);            // real chip -> plausible status
+}
 
 void update_display_counters() {
   #if defined(NIBBLE_ZERO)
+  if(!oled_ok) return;
   u8g2.clearBuffer();
   u8g2.setCursor(0, 10);
   u8g2.print("lora-lite v1.0");
@@ -70,8 +95,7 @@ void update_display_counters() {
 
 void mt_send(uint8_t *buff, int len)
 {
-  leds[0] = CRGB::Red;
-  FastLED.show();
+  neopixelWrite(NEOPIXEL_PIN, 40, 0, 0);   // TX = red
   neopixel_off_time = millis() + 200;
   int16_t status = radio.startTransmit(buff,len);
   tx_count++;
@@ -80,6 +104,7 @@ void mt_send(uint8_t *buff, int len)
 
 void display_status(const char* msg, int line) {
   #if defined(NIBBLE_ZERO)
+  if(!oled_ok) return;
   u8g2.setCursor(0, line * 10 + 10);
   u8g2.print(msg);
   u8g2.sendBuffer();
@@ -132,40 +157,45 @@ void setup() {
   }
 
   Serial.printf("Radio Init\n");
-  int state = radio.begin(freq, bw, sf, cr, syncWord, power, pl, 1.8, false);
+  int state = RADIOLIB_ERR_CHIP_NOT_FOUND;
+  if (probe_radio()) {
+    state = radio.begin(freq, bw, sf, cr, syncWord, power, pl, 1.8, false);
+  } else {
+    Serial.println(F("no SX1262 detected on SPI/BUSY - skipping radio.begin"));
+  }
   if (state == RADIOLIB_ERR_NONE) {
+    radio_ok = true;
     Serial.println(F("success!"));
     display_status("Radio Init: OK", 2);
+
+    #if defined(WIFI_LORA_32_V4) || defined(NIBBLE_ZERO)
+    radio.setDio2AsRfSwitch(true);
+    #endif
+
+    // set the function that will be called when a new packet is received / sent
+    radio.setPacketReceivedAction(radioEvent);
+    radio.setPacketSentAction(radioEvent);
+
+    Serial.print(F("[SX1262] Starting to listen ... "));
+    state = radio.startReceive();
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(F("success!"));
+      display_status("Listening...", 3);
+    } else {
+      radio_ok = false;
+      Serial.print(F("startReceive failed, code "));
+      Serial.println(state);
+      display_status("Listen Fail", 3);
+    }
   } else {
-    Serial.print(F("failed, code "));
+    radio_ok = false;
+    Serial.print(F("radio init FAILED, code "));
     Serial.println(state);
-    char err[32];
-    sprintf(err, "Radio Error: %d", state);
-    display_status(err, 2);
-    while (true) { delay(10); }
+    display_status("RADIO FAIL (alive)", 2);
   }
-
-  #if defined(WIFI_LORA_32_V4) || defined(NIBBLE_ZERO)
-  radio.setDio2AsRfSwitch(true);
-  #endif
-
-  // set the function that will be called
-  // when new packet is received
-  radio.setPacketReceivedAction(radioEvent);
-  radio.setPacketSentAction(radioEvent);
-
-  // start listening for LoRa packets
-  Serial.print(F("[SX1262] Starting to listen ... "));
-  state = radio.startReceive();
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println(F("success!"));
-    display_status("Listening...", 3);
-  } else {
-    Serial.print(F("failed, code "));
-    Serial.println(state);
-    display_status("Listen Fail", 3);
-    while (true) { delay(10); }
-  }
+  // No more while(true): a missing/incompatible radio no longer wedges the board.
+  // It keeps serving serial (diagnosable + reflashable); the heartbeat and a slow
+  // red NeoPixel report the fault.
 }
 void led_on(int ms)
 {
@@ -176,15 +206,27 @@ void led_on(int ms)
 void loop() {
   int i;
   serial_update();
+
+  // Low-rate heartbeat so a live board is distinguishable from a wedged one.
+  // ASCII only -> the host's 0x94/0xC3 frame parser ignores these bytes.
+  static uint32_t hb = 0;
+  if (millis() - hb > 5000) {
+    hb = millis();
+    Serial.printf("hb up=%lus rx=%d tx=%d radio=%s oled=%s\n",
+                  (unsigned long)(millis()/1000), rx_count, tx_count,
+                  radio_ok ? "OK" : "FAIL", oled_ok ? "OK" : "none");
+  }
   
   // NeoPixel Status logic
   if(millis() < neopixel_off_time) {
     // Keep current color (Red/Green)
   } else {
-    // Breathing Blue idle
-    uint8_t breath = beat8(15, 0); // 15 bpm
-    leds[0] = CHSV(160, 255, lerp8by8(10, 100, breath)); 
-    FastLED.show();
+    // Idle breathing: blue when healthy, RED when the radio is down (fault)
+    uint8_t ramp = (uint8_t)((millis() / 16) & 0xFF);         // ~4s period
+    uint8_t tri  = ramp < 128 ? ramp : (uint8_t)(255 - ramp); // 0..127..0
+    uint8_t v    = 8 + (uint16_t)tri * 90 / 127;              // brightness 8..98
+    if (radio_ok) neopixelWrite(NEOPIXEL_PIN, 0, 0, v);       // blue
+    else          neopixelWrite(NEOPIXEL_PIN, v, 0, 0);       // red = radio fault
   }
 
   if(millis() >= led_off_time)
@@ -200,9 +242,9 @@ void loop() {
     if (state == RADIOLIB_ERR_NONE) {
       // Serial.println(F("success!"));
     } else {
-      Serial.print(F("failed, code "));
+      Serial.print(F("startReceive(loop) failed, code "));
       Serial.println(state);
-      while (true) { delay(10); }
+      radio_ok = false;   // degrade instead of hanging; heartbeat + LED report it
     }
     transmitFlag = false;
     int len = radio.getPacketLength(true);
@@ -227,8 +269,7 @@ void loop() {
     int state = radio.readData(readBuff,len);
 
     if (state == RADIOLIB_ERR_NONE) {
-      leds[0] = CRGB::Green;
-      FastLED.show();
+      neopixelWrite(NEOPIXEL_PIN, 0, 40, 0);   // RX = green
       neopixel_off_time = millis() + 200;
       rx_count++;
       update_display_counters();
@@ -253,8 +294,7 @@ void loop() {
         }
       }
       if(portnum == 77) {
-        leds[0] = CRGB::Purple;
-        FastLED.show();
+        neopixelWrite(NEOPIXEL_PIN, 30, 0, 30);  // silent alarm = purple
         neopixel_off_time = millis() + 1000;
         display_status("SILENT ALARM!", 3);
       }
