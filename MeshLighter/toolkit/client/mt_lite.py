@@ -32,6 +32,10 @@ class mt_lite:
             mtp.rssi = pb.get(3, 0)
             if mtp.rssi>= 2**31:
                 mtp.rssi -= 2**32
+            snr_raw = pb.get(4, 0)              # #5 metadata: SNR (x4) + rx timestamp
+            if snr_raw >= 2**31: snr_raw -= 2**32
+            mtp.snr = snr_raw / 4.0
+            mtp.rxtime = pb.get(6, 0)
             try:
                 chan = mt_channel.get_channel_by_hash(mtp.hash)
                 mt_crypto.encrypt_packet(mtp,chan.key)
@@ -53,7 +57,7 @@ class mt_lite:
             return dec
         return None
     
-    def send(self,msg):
+    def send(self,msg,wait_ack=True,ack_timeout=2.0):
         if msg.decrypted == True:
             chan = mt_channel.get_channel_by_hash(msg.hash)
             mt_crypto.encrypt_packet(msg,chan.key)
@@ -61,10 +65,27 @@ class mt_lite:
         wrapper = pypb.protobuf()
         wrapper.encode(1,pypb.PB_VARINT,1)
         wrapper.encode(2,pypb.PB_STRING,msg.to_buffer())
-        print(wrapper.to_map())
-        print(wrapper.get_buffer())
-        buff = wrapper.get_buffer()
-        self.radio.write(buff)
+        self.radio.write(wrapper.get_buffer())
+        if wait_ack:
+            return self.wait_ack(ack_timeout)   # #2 flow control: block until TX done
+        return True
+
+    def wait_ack(self,timeout=2.0):
+        # Block until the firmware's TX-done ACK ({1:3}) or timeout. Paces injection
+        # to actual LoRa airtime so the device RX buffer never overflows.
+        import time
+        t=time.time()
+        while time.time()-t < timeout:
+            self.update()
+            raw=self.radio.read()
+            if raw is not None:
+                try:
+                    if pypb.protobuf(bytes(raw)).to_map().get(1)==3:
+                        return True
+                except Exception:
+                    pass
+            time.sleep(0.005)
+        return False
 
     def get_config(self,key):
         wrapper = pypb.protobuf()
@@ -98,3 +119,42 @@ class mt_lite:
         wrapper.encode(1,pypb.PB_VARINT,2)
         wrapper.encode(2,pypb.PB_VARINT,3)
         self.radio.write(wrapper.get_buffer())
+
+    def _cfg(self, op, extra=None):
+        w = pypb.protobuf()
+        w.encode(1, pypb.PB_VARINT, 2)   # command = config/control
+        w.encode(2, pypb.PB_VARINT, op)  # operation
+        if extra:
+            for fid, val in extra:
+                w.encode(fid, pypb.PB_VARINT, val)
+        self.radio.write(w.get_buffer())
+
+    def apply_live(self):
+        # #3 apply the current NVDATA PHY params to the radio live (no reboot).
+        self._cfg(4)
+
+    def set_sniff(self, sync=0x12, crc=False):
+        # #5 promiscuous: set LoRa sync word (0x2B Meshtastic / 0x12 generic) + CRC.
+        self._cfg(5, [(3, sync & 0xff), (4, 1 if crc else 0)])
+
+    def scan(self, start_khz=902000, end_khz=928000, step_khz=250, dwell_ms=25, timeout=25.0):
+        # #6 spectrum sweep -> list of (freq_khz, rssi_dbm), highest first.
+        import time
+        self._cfg(6, [(3, start_khz), (4, end_khz), (5, step_khz), (6, dwell_ms)])
+        out = []; t = time.time()
+        while time.time() - t < timeout:
+            self.update()
+            raw = self.radio.read()
+            if raw is not None:
+                try:
+                    m = pypb.protobuf(bytes(raw)).to_map()
+                    if m.get(1) == 4:
+                        f = m.get(2, 0); r = m.get(3, 0)
+                        if r >= 2**31: r -= 2**32
+                        out.append((f, r))
+                    elif m.get(1) == 5:
+                        break   # scan complete
+                except Exception:
+                    pass
+            time.sleep(0.002)
+        return out
