@@ -13,10 +13,11 @@ uint64_t picopb::decode_varint(size_t *size)
 {
    int index = offset + 1;
    uint64_t value = 0;
+   int shift = 0;
    while(index < length)
    {
-      value<<=7;
-      value|=(buffer[index]&0x7F);
+      value |= (uint64_t)(buffer[index] & 0x7F) << shift;   // protobuf varints are little-endian
+      shift += 7;
       if((buffer[index]&0x80)==0)
       {
          index++;
@@ -99,19 +100,12 @@ int picopb::read_i32(uint32_t *out)
 
 int picopb::encode_varint(uint64_t num)
 {
-   int shift;
-   for(shift=56;shift > 0;shift-=7)
+   while(num > 0x7F)                      // protobuf varints are little-endian (LSB first)
    {
-      if((num>>shift)&0x7F)
-      {
-         break;
-      }
+      buffer[offset++] = (num & 0x7F) | 0x80;
+      num >>= 7;
    }
-   for(;shift >= 0;shift-=7)
-   {
-      buffer[offset++]=(num>>shift)|0x80;
-   }
-   buffer[offset-1]&=~0x80;
+   buffer[offset++] = num & 0x7F;
    return 0;
 }
 

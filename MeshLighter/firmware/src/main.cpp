@@ -53,6 +53,8 @@ uint64_t neopixel_off_time = 0;
 int rx_count = 0;
 int tx_count = 0;
 bool radio_ok = false;   // set true only if the SX1262 initialises
+volatile bool txPending = false;   // TX started -> emit ACK when done (flow control)
+uint8_t ctrl_buf[64];              // scratch for control / ACK / scan frames
 
 // Non-blocking presence check for the SX1262: reset, wait (bounded) for BUSY to
 // fall, then read GetStatus. Prevents radio.begin() from hanging forever on a
@@ -98,6 +100,7 @@ void mt_send(uint8_t *buff, int len)
   neopixelWrite(NEOPIXEL_PIN, 40, 0, 0);   // TX = red
   neopixel_off_time = millis() + 200;
   int16_t status = radio.startTransmit(buff,len);
+  txPending = true;                 // TX in flight -> ACK on completion [#2]
   tx_count++;
   update_display_counters();
 }
@@ -109,6 +112,73 @@ void display_status(const char* msg, int line) {
   u8g2.print(msg);
   u8g2.sendBuffer();
   #endif
+}
+
+// ---- runtime radio control (invoked from serial_config in serial_interface.cpp) ----
+
+// #3 apply PHY params (freq/bw/sf/cr/sync/power/pl) from NVDATA to the LIVE radio
+// with no reboot -> instant channel / preset / power / private-channel switching.
+void radio_apply_live() {
+  if (!radio_ok) { Serial.println(F("apply-live: radio not ready")); return; }
+  int l;
+  l=4; nvdata.get("freq",(uint8_t*)&freq,&l);
+  l=4; nvdata.get("bw",(uint8_t*)&bw,&l);
+  l=1; nvdata.get("sf",(uint8_t*)&sf,&l);
+  l=1; nvdata.get("cr",(uint8_t*)&cr,&l);
+  l=1; nvdata.get("syncword",(uint8_t*)&syncWord,&l);
+  l=1; nvdata.get("power",(uint8_t*)&power,&l);
+  l=1; nvdata.get("pl",(uint8_t*)&pl,&l);
+  radio.setFrequency(freq);
+  radio.setBandwidth(bw);
+  radio.setSpreadingFactor(sf);
+  radio.setCodingRate(cr);
+  radio.setSyncWord(syncWord);
+  radio.setOutputPower(power);
+  radio.setPreambleLength(pl);
+  radio.startReceive();
+  Serial.printf("apply-live: freq=%.3f bw=%.1f sf=%d cr=%d sync=0x%02x pwr=%d\n",
+                freq, bw, sf, cr, syncWord, power);
+  update_display_counters();
+  picopb pb(ctrl_buf, sizeof(ctrl_buf)); pb.write_varint(1, 5);   // control-done ack
+  serial_send(ctrl_buf, pb.get_length());
+}
+
+// #5 promiscuous sniff: choose the LoRa sync word (0x2B = Meshtastic, 0x12 =
+// generic/public LoRa) and turn CRC off to also capture malformed frames.
+void radio_set_sniff(uint8_t sync, bool crc) {
+  if (!radio_ok) return;
+  radio.setSyncWord(sync);
+  radio.setCRC(crc);
+  radio.startReceive();
+  Serial.printf("sniff: sync=0x%02x crc=%d\n", sync, crc ? 1 : 0);
+  picopb pb(ctrl_buf, sizeof(ctrl_buf)); pb.write_varint(1, 5);
+  serial_send(ctrl_buf, pb.get_length());
+}
+
+// #6 spectrum sweep: hop start..end by step (kHz), report peak RSSI per channel,
+// then restore normal Meshtastic RX. Frames: {1:4, 2:freq_khz, 3:rssi}, end {1:5}.
+void radio_scan(uint32_t start_khz, uint32_t end_khz, uint32_t step_khz, uint32_t dwell_ms) {
+  if (!radio_ok || step_khz == 0) return;
+  Serial.printf("scan %lu-%lu khz step %lu dwell %lu\n",
+                (unsigned long)start_khz,(unsigned long)end_khz,
+                (unsigned long)step_khz,(unsigned long)dwell_ms);
+  for (uint32_t f = start_khz; f <= end_khz; f += step_khz) {
+    radio.setFrequency(f / 1000.0);
+    radio.startReceive();
+    float peak = -200.0;
+    uint32_t t0 = millis();
+    while (millis() - t0 < dwell_ms) {
+      float r = radio.getRSSI(false);   // instantaneous channel RSSI
+      if (r > peak) peak = r;
+      delay(1);
+    }
+    picopb pb(ctrl_buf, sizeof(ctrl_buf));
+    pb.write_varint(1, 4);
+    pb.write_i32(2, f);
+    pb.write_i32(3, (int)peak);
+    serial_send(ctrl_buf, pb.get_length());
+  }
+  radio_apply_live();   // restore normal RX (also emits the {1:5} done ack)
 }
 
 void setup() {
@@ -252,6 +322,13 @@ void loop() {
     {
       receivedFlag = true;
     }
+    else if(txPending)     // TX just completed -> ACK for host flow control [#2]
+    {
+      txPending = false;
+      picopb ack(ctrl_buf, sizeof(ctrl_buf));
+      ack.write_varint(1, 3);
+      serial_send(ctrl_buf, ack.get_length());
+    }
   }
   // check if the flag is set
   if(receivedFlag) {
@@ -278,7 +355,10 @@ void loop() {
       pb.write_varint(1,1);
       pb.write_string(2,readBuff,len);
       float rssi = radio.getRSSI(true);
-      pb.write_i32(3,rssi);
+      pb.write_i32(3,(int)rssi);
+      float snr = radio.getSNR();
+      pb.write_i32(4,(int)(snr*4));        // SNR x4 (host divides) [#5 metadata]
+      pb.write_i32(6,(uint32_t)millis());  // device rx timestamp (ms) [#5 metadata]
       serial_send(pb_buff,pb.get_length());
 
       // POC 3: Silent Alarm
