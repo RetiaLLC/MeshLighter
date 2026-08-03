@@ -72,6 +72,79 @@ def decrypt_dm(my_priv, their_pub, from_node, packet_id, wire):
         _nonce(packet_id, from_node, extra_nonce), ct_tag, None)
 
 
+# --- MeshPacket wire helpers -------------------------------------------------
+# PKC MeshPacket fields (meshtastic/mesh.proto): from=1(fx32) to=2(fx32)
+# channel=3 encrypted=5(bytes) id=6(fx32) public_key=16(bytes,sender) pki_encrypted=17(bool)
+
+def _read_varint(b, o):
+    n = sh = 0
+    while True:
+        n |= (b[o] & 0x7f) << sh; sh += 7
+        last = b[o] < 0x80; o += 1
+        if last:
+            return n, o
+
+def _uv(n):                             # bare varint
+    out = b''
+    while n > 0x7f:
+        out += bytes([0x80 | (n & 0x7f)]); n >>= 7
+    return out + bytes([n])
+
+def _tag(idx, wt):                      # field tag (fields >=16 are multi-byte)
+    return _uv((idx << 3) | wt)
+
+def _fx32(idx, v):                      # fixed32 field
+    return _tag(idx, 5) + (v & 0xffffffff).to_bytes(4, 'little')
+
+def _ld(idx, b):                        # length-delimited (bytes) field
+    return _tag(idx, 2) + _uv(len(b)) + bytes(b)
+
+def _vf(idx, n):                        # varint field
+    return _tag(idx, 0) + _uv(n)
+
+def parse_meshpacket(mp):
+    """Parse a raw MeshPacket into the fields PKC decrypt needs."""
+    b = bytes(mp); o = 0; out = {}
+    while o < len(b):
+        tag, o = _read_varint(b, o); idx, wt = tag >> 3, tag & 7
+        if   wt == 0: out[idx], o = _read_varint(b, o)
+        elif wt == 5: out[idx] = int.from_bytes(b[o:o+4], 'little'); o += 4
+        elif wt == 1: out[idx] = int.from_bytes(b[o:o+8], 'little'); o += 8
+        elif wt == 2:
+            ln, o = _read_varint(b, o); out[idx] = b[o:o+ln]; o += ln
+        else: break
+    return {'from': out.get(1), 'to': out.get(2), 'channel': out.get(3),
+            'encrypted': out.get(5), 'id': out.get(6),
+            'public_key': out.get(16), 'pki_encrypted': bool(out.get(17))}
+
+def decrypt_meshpacket(my_priv, mp, sender_pub=None):
+    """Decrypt a captured PKC MeshPacket. sender_pub defaults to the packet's own
+    public_key (field 16); supply it if the sender omitted it. Returns (plaintext, fields)."""
+    f = parse_meshpacket(mp)
+    pub = sender_pub if sender_pub is not None else f['public_key']
+    if pub is None:
+        raise ValueError("no sender public key (field 16 absent and none supplied)")
+    if not f['encrypted']:
+        raise ValueError("MeshPacket has no encrypted payload (field 5)")
+    return decrypt_dm(my_priv, pub, f['from'], f['id'], f['encrypted']), f
+
+def build_pkc_meshpacket(my_priv, my_pub, my_num, their_pub, their_num, packet_id,
+                         plaintext, extra_nonce, want_ack=True, include_pubkey=True):
+    """Build a PKC DM MeshPacket that a real node can decrypt (AUTHORIZED-TX path).
+    my_pub is embedded as field 16 so the recipient can derive the shared secret."""
+    enc = encrypt_dm(my_priv, their_pub, my_num, packet_id, plaintext, extra_nonce)
+    p  = _fx32(1, my_num)                 # from
+    p += _fx32(2, their_num)              # to
+    p += _ld(5, enc)                      # encrypted = ciphertext|tag(8)|extraNonce(4)
+    p += _fx32(6, packet_id)              # id
+    if include_pubkey:
+        p += _ld(16, my_pub)              # public_key (sender's)
+    if want_ack:
+        p += _vf(10, 1)                   # want_ack
+    p += _vf(17, 1)                       # pki_encrypted = true
+    return p
+
+
 def selftest():
     ok = True
     a = X25519PrivateKey.generate(); b = X25519PrivateKey.generate()
@@ -110,6 +183,18 @@ def selftest():
         print("PKC auth rejects wrong nonce:    ", "FAIL (decrypted anyway)"); ok = False
     except Exception:
         print("PKC auth rejects wrong nonce:    ", "PASS")
+
+    # 7. full MeshPacket wire round-trip: A builds a PKC DM MeshPacket to B,
+    #    B parses + decrypts using only my_priv + the embedded sender public_key.
+    a_num, b_num = 0x02e4bba4, 0x02e4cfec
+    mp = build_pkc_meshpacket(apriv, apub, a_num, bpub, b_num, pid, msg, extra)
+    f = parse_meshpacket(mp)
+    p = (f['from'] == a_num and f['to'] == b_num and f['id'] == pid
+         and f['pki_encrypted'] and f['public_key'] == apub); ok &= p
+    print("PKC MeshPacket parse fields:     ", "PASS" if p else "FAIL")
+    pt2, _ = decrypt_meshpacket(bpriv, mp)     # sender_pub taken from embedded field 16
+    p = (pt2 == msg); ok &= p
+    print("PKC MeshPacket build->decrypt:   ", "PASS" if p else "FAIL")
 
     print("mt_pkc selftest:", "ALL PASS" if ok else "FAILURES ABOVE")
     return ok
