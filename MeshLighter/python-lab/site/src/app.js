@@ -311,3 +311,14 @@ ui.fallbackEditor.value = STARTER_SCRIPT; setCode(STARTER_SCRIPT); updateUi();
 void loadDemoList();
 void loadEditor();
 void loadPython().catch((error) => { writeConsole(`[Pyodide failed: ${error.message || error}]\n`, "error"); updateUi(); });
+
+// Demo-mode convenience: ?demo=1&autorun connects the mock and runs the starter once.
+if (demoMode && new URLSearchParams(location.search).has("autorun")) {
+  (async () => {
+    for (let i = 0; i < 200 && !pyodide; i += 1) await sleep(100);
+    await sleep(400);
+    try { await connect(); } catch { /* mock */ }
+    await sleep(300);
+    await runPython();
+  })();
+}
