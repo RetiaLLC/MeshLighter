@@ -60,6 +60,30 @@ if KAT_REAL_PACKET_HEX:
 else:
     print('  SKIP real-over-air interop (set KAT_REAL_PACKET_HEX from capture_kat.py)')
 
+# 5. PKC / DM crypto — guards the mt_pkc layout against Meshtastic CryptoEngine.cpp:
+#    key = SHA256(X25519 shared), nonce = id(4)|extraNonce(4)|from(4)|0, AES-256-CCM/8,
+#    wire = ciphertext|tag(8)|extraNonce(4 LE). A wrong key/nonce/order fails the tag.
+try:
+    import mt_pkc, hashlib
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    a = X25519PrivateKey.generate(); b = X25519PrivateKey.generate()
+    apriv, apub = a.private_bytes_raw(), a.public_key().public_bytes_raw()
+    bpriv, bpub = b.private_bytes_raw(), b.public_key().public_bytes_raw()
+    check('PKC key == SHA256(X25519 shared)',
+          mt_pkc.pkc_key(apriv, bpub) == hashlib.sha256(mt_pkc.shared_secret(apriv, bpub)).digest())
+    wire = mt_pkc.encrypt_dm(apriv, bpub, 0x11223344, 0x55667788, b'PKC interop check', 0xAABBCCDD)
+    check('PKC A->B encrypt / B decrypt round-trip',
+          mt_pkc.decrypt_dm(bpriv, apub, 0x11223344, 0x55667788, wire) == b'PKC interop check')
+    check('PKC wire overhead == 12 (tag8 + extraNonce4)',
+          len(wire) - len(b'PKC interop check') == mt_pkc.PKC_OVERHEAD)
+    try:
+        mt_pkc.decrypt_dm(bpriv, apub, 0x11223344, 0x55667789, wire)   # wrong id => wrong nonce
+        check('PKC auth rejects a tampered nonce', False)
+    except Exception:
+        check('PKC auth rejects a tampered nonce', True)
+except ImportError:
+    print('  SKIP PKC crypto (cryptography package not installed)')
+
 print()
 print('mt_selftest:', 'ALL PASS' if not fails else ('FAILED -> ' + ', '.join(fails)))
 sys.exit(1 if fails else 0)

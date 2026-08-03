@@ -1,5 +1,9 @@
-from Crypto.Cipher import AES
-from Crypto.Util import Counter
+try:                                            # pycryptodome (Crypto) or pycryptodomex (Cryptodome)
+    from Crypto.Cipher import AES
+    from Crypto.Util import Counter
+except ImportError:
+    from Cryptodome.Cipher import AES
+    from Cryptodome.Util import Counter
 
 class aesctr:
     def __init__(self,iv,key):
