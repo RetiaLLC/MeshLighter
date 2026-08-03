@@ -27,7 +27,8 @@
 #define NUM_LEDS 1
 
 SPIClass hspi(FSPI); // Use FSPI for ESP32-S3
-SX1262 radio = new Module(SS, DIO1, RST_LoRa, BUSY_LoRa, hspi);
+// The radio object is constructed at runtime after board detection (see main.cpp),
+// so one image runs on the Nibble (SX1262) and the DEF CON badge (SX1276/RFM95).
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ OLED_SCL, /* data=*/ OLED_SDA);
 
@@ -41,7 +42,7 @@ static bool probe_i2c(uint8_t addr)
 
 void board_init()
 {
-  hspi.begin(SCK, MISO, MOSI, SS);
+  // SPI + radio are set up in detect_radio() (main.cpp); NeoPixel after detection.
   Wire.begin(OLED_SDA, OLED_SCL);
 
   // Probe for the SSD1306 before touching U8g2. On a board without this OLED
@@ -56,8 +57,6 @@ void board_init()
     u8g2.drawStr(0,10,"lora-lite init...");
     u8g2.sendBuffer();
   }
-
-  neopixelWrite(NEOPIXEL_PIN, 0, 0, 25);   // dim blue = booting / idle
 }
 
 #endif

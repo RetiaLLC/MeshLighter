@@ -52,31 +52,82 @@ uint64_t led_off_time = 0;
 uint64_t neopixel_off_time = 0;
 int rx_count = 0;
 int tx_count = 0;
-bool radio_ok = false;   // set true only if the SX1262 initialises
+bool radio_ok = false;   // set true only if a radio initialises
 volatile bool txPending = false;   // TX started -> emit ACK when done (flow control)
 uint8_t ctrl_buf[64];              // scratch for control / ACK / scan frames
 
-// Non-blocking presence check for the SX1262: reset, wait (bounded) for BUSY to
-// fall, then read GetStatus. Prevents radio.begin() from hanging forever on a
-// board that has no SX1262 at these pins (old firmware sat in while(true)).
-static bool probe_radio() {
-  pinMode(SS, OUTPUT);       digitalWrite(SS, HIGH);
-  pinMode(RST_LoRa, OUTPUT);
-  pinMode(BUSY_LoRa, INPUT);
-  digitalWrite(RST_LoRa, LOW);  delay(2);
-  digitalWrite(RST_LoRa, HIGH);
+// ---- multi-board radio auto-detect: SX1262 (Nibble) or SX1276/RFM95 (badge) ----
+// Retia DEF CON badge LoRa pins (SX1276): SPI 13/12/11, CS 48, RST 38, DIO0 21.
+#define BADGE_SCK 13
+#define BADGE_MISO 12
+#define BADGE_MOSI 11
+#define BADGE_CS  48
+#define BADGE_RST 38
+#define BADGE_DIO0 21
+SX1262* r62 = nullptr;
+SX1276* r76 = nullptr;
+int radio_type = 0;          // 0=none, 1=SX1262 (Nibble), 2=SX1276 (badge)
+int neo_pin = NEOPIXEL_PIN;  // -1 disables (the badge uses pin 21 for LoRa DIO0)
+
+static void neo(uint8_t r, uint8_t g, uint8_t b) { if (neo_pin >= 0) neopixelWrite(neo_pin, r, g, b); }
+
+static bool probe_sx1262() {
+  hspi.begin(SCK, MISO, MOSI, SS);
+  pinMode(SS, OUTPUT); digitalWrite(SS, HIGH);
+  pinMode(RST_LoRa, OUTPUT); pinMode(BUSY_LoRa, INPUT);
+  digitalWrite(RST_LoRa, LOW); delay(2); digitalWrite(RST_LoRa, HIGH);
   uint32_t t0 = millis();
-  while (digitalRead(BUSY_LoRa) == HIGH) {     // a present chip releases BUSY
-    if (millis() - t0 > 100) return false;
-    delay(1);
-  }
+  while (digitalRead(BUSY_LoRa) == HIGH) { if (millis() - t0 > 100) return false; delay(1); }
   hspi.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));
-  digitalWrite(SS, LOW);
-  hspi.transfer(0xC0);                          // GetStatus opcode
-  uint8_t st = hspi.transfer(0x00);
-  digitalWrite(SS, HIGH);
+  digitalWrite(SS, LOW); hspi.transfer(0xC0); uint8_t st = hspi.transfer(0x00); digitalWrite(SS, HIGH);
   hspi.endTransaction();
-  return (st != 0x00 && st != 0xFF);            // real chip -> plausible status
+  return (st != 0x00 && st != 0xFF);           // SX1262 GetStatus response
+}
+static bool probe_sx1276() {
+  hspi.end(); hspi.begin(BADGE_SCK, BADGE_MISO, BADGE_MOSI, BADGE_CS);
+  pinMode(BADGE_CS, OUTPUT); digitalWrite(BADGE_CS, HIGH);
+  pinMode(BADGE_RST, OUTPUT); digitalWrite(BADGE_RST, LOW); delay(2); digitalWrite(BADGE_RST, HIGH); delay(6);
+  hspi.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(BADGE_CS, LOW); hspi.transfer(0x42 & 0x7f); uint8_t v = hspi.transfer(0x00); digitalWrite(BADGE_CS, HIGH);
+  hspi.endTransaction();
+  return (v == 0x12);                          // SX1276 RegVersion == 0x12
+}
+static void detect_radio() {
+  if (probe_sx1262()) {
+    r62 = new SX1262(new Module(SS, DIO1, RST_LoRa, BUSY_LoRa, hspi));
+    radio_type = 1; neo_pin = NEOPIXEL_PIN; Serial.println(F("radio: SX1262 (Nibble)"));
+  } else if (probe_sx1276()) {
+    r76 = new SX1276(new Module(BADGE_CS, BADGE_DIO0, BADGE_RST, RADIOLIB_NC, hspi));
+    radio_type = 2; neo_pin = -1; Serial.println(F("radio: SX1276 (DEF CON badge)"));
+  } else {
+    radio_type = 0; Serial.println(F("radio: none detected on either board profile"));
+  }
+}
+// Polymorphic wrappers — SX126x/SX127x have incompatible begin() signatures and the
+// badge SX1276 tops out near 20 dBm, so clamp there.
+static int16_t r_begin() {
+  int8_t p = power;
+  if (radio_type == 1) return r62->begin(freq, bw, sf, cr, syncWord, p, pl, 1.8, false);
+  if (radio_type == 2) { if (p > 20) p = 20; return r76->begin(freq, bw, sf, cr, syncWord, p, pl); }
+  return -1;
+}
+static void r_set_actions(void (*fn)()) {
+  if (radio_type == 1) { r62->setDio2AsRfSwitch(true); r62->setPacketReceivedAction(fn); r62->setPacketSentAction(fn); }
+  if (radio_type == 2) { r76->setPacketReceivedAction(fn); r76->setPacketSentAction(fn); }
+}
+static int16_t r_start_receive() { if (radio_type==1) return r62->startReceive(); if (radio_type==2) return r76->startReceive(); return -1; }
+static int16_t r_start_transmit(uint8_t* b, int l) { if (radio_type==1) return r62->startTransmit(b, l); if (radio_type==2) return r76->startTransmit(b, l); return -1; }
+static size_t  r_packet_length() { if (radio_type==1) return r62->getPacketLength(true); if (radio_type==2) return r76->getPacketLength(true); return 0; }
+static int16_t r_read_data(uint8_t* b, int l) { if (radio_type==1) return r62->readData(b, l); if (radio_type==2) return r76->readData(b, l); return -1; }
+static float   r_rssi(bool pkt) { if (radio_type==1) return r62->getRSSI(pkt); if (radio_type==2) return r76->getRSSI(pkt); return -200; }
+static float   r_snr() { if (radio_type==1) return r62->getSNR(); if (radio_type==2) return r76->getSNR(); return 0; }
+static void    r_set_frequency(float f) { if (radio_type==1) r62->setFrequency(f); if (radio_type==2) r76->setFrequency(f); }
+static void    r_set_syncword(uint8_t s) { if (radio_type==1) r62->setSyncWord(s); if (radio_type==2) r76->setSyncWord(s); }
+static void    r_set_crc(bool c) { if (radio_type==1) r62->setCRC(c); if (radio_type==2) r76->setCRC(c); }
+static void    r_apply_params() {
+  int8_t p = power;
+  if (radio_type == 1) { r62->setBandwidth(bw); r62->setSpreadingFactor(sf); r62->setCodingRate(cr); r62->setSyncWord(syncWord); r62->setOutputPower(p); r62->setPreambleLength(pl); }
+  if (radio_type == 2) { if (p > 20) p = 20; r76->setBandwidth(bw); r76->setSpreadingFactor(sf); r76->setCodingRate(cr); r76->setSyncWord(syncWord); r76->setOutputPower(p); r76->setPreambleLength(pl); }
 }
 
 void update_display_counters() {
@@ -97,9 +148,9 @@ void update_display_counters() {
 
 void mt_send(uint8_t *buff, int len)
 {
-  neopixelWrite(NEOPIXEL_PIN, 40, 0, 0);   // TX = red
+  neo(40, 0, 0);   // TX = red
   neopixel_off_time = millis() + 200;
-  int16_t status = radio.startTransmit(buff,len);
+  int16_t status = r_start_transmit(buff,len);
   txPending = true;                 // TX in flight -> ACK on completion [#2]
   tx_count++;
   update_display_counters();
@@ -128,14 +179,9 @@ void radio_apply_live() {
   l=1; nvdata.get("syncword",(uint8_t*)&syncWord,&l);
   l=1; nvdata.get("power",(uint8_t*)&power,&l);
   l=1; nvdata.get("pl",(uint8_t*)&pl,&l);
-  radio.setFrequency(freq);
-  radio.setBandwidth(bw);
-  radio.setSpreadingFactor(sf);
-  radio.setCodingRate(cr);
-  radio.setSyncWord(syncWord);
-  radio.setOutputPower(power);
-  radio.setPreambleLength(pl);
-  radio.startReceive();
+  r_set_frequency(freq);
+  r_apply_params();
+  r_start_receive();
   Serial.printf("apply-live: freq=%.3f bw=%.1f sf=%d cr=%d sync=0x%02x pwr=%d\n",
                 freq, bw, sf, cr, syncWord, power);
   update_display_counters();
@@ -147,9 +193,9 @@ void radio_apply_live() {
 // generic/public LoRa) and turn CRC off to also capture malformed frames.
 void radio_set_sniff(uint8_t sync, bool crc) {
   if (!radio_ok) return;
-  radio.setSyncWord(sync);
-  radio.setCRC(crc);
-  radio.startReceive();
+  r_set_syncword(sync);
+  r_set_crc(crc);
+  r_start_receive();
   Serial.printf("sniff: sync=0x%02x crc=%d\n", sync, crc ? 1 : 0);
   picopb pb(ctrl_buf, sizeof(ctrl_buf)); pb.write_varint(1, 5);
   serial_send(ctrl_buf, pb.get_length());
@@ -163,12 +209,12 @@ void radio_scan(uint32_t start_khz, uint32_t end_khz, uint32_t step_khz, uint32_
                 (unsigned long)start_khz,(unsigned long)end_khz,
                 (unsigned long)step_khz,(unsigned long)dwell_ms);
   for (uint32_t f = start_khz; f <= end_khz; f += step_khz) {
-    radio.setFrequency(f / 1000.0);
-    radio.startReceive();
+    r_set_frequency(f / 1000.0);
+    r_start_receive();
     float peak = -200.0;
     uint32_t t0 = millis();
     while (millis() - t0 < dwell_ms) {
-      float r = radio.getRSSI(false);   // instantaneous channel RSSI
+      float r = r_rssi(false);   // instantaneous channel RSSI
       if (r > peak) peak = r;
       delay(1);
     }
@@ -228,26 +274,22 @@ void setup() {
 
   Serial.printf("Radio Init\n");
   int state = RADIOLIB_ERR_CHIP_NOT_FOUND;
-  if (probe_radio()) {
-    state = radio.begin(freq, bw, sf, cr, syncWord, power, pl, 1.8, false);
+  detect_radio();
+  neo(0, 0, 25);                 // dim blue = booting/idle (no-op if neo_pin<0)
+  if (radio_type) {
+    state = r_begin();
   } else {
-    Serial.println(F("no SX1262 detected on SPI/BUSY - skipping radio.begin"));
+    Serial.println(F("no radio detected - skipping begin"));
   }
   if (state == RADIOLIB_ERR_NONE) {
     radio_ok = true;
     Serial.println(F("success!"));
     display_status("Radio Init: OK", 2);
 
-    #if defined(WIFI_LORA_32_V4) || defined(NIBBLE_ZERO)
-    radio.setDio2AsRfSwitch(true);
-    #endif
+    r_set_actions(radioEvent);
 
-    // set the function that will be called when a new packet is received / sent
-    radio.setPacketReceivedAction(radioEvent);
-    radio.setPacketSentAction(radioEvent);
-
-    Serial.print(F("[SX1262] Starting to listen ... "));
-    state = radio.startReceive();
+    Serial.print(F("[radio] Starting to listen ... "));
+    state = r_start_receive();
     if (state == RADIOLIB_ERR_NONE) {
       Serial.println(F("success!"));
       display_status("Listening...", 3);
@@ -295,8 +337,8 @@ void loop() {
     uint8_t ramp = (uint8_t)((millis() / 16) & 0xFF);         // ~4s period
     uint8_t tri  = ramp < 128 ? ramp : (uint8_t)(255 - ramp); // 0..127..0
     uint8_t v    = 8 + (uint16_t)tri * 90 / 127;              // brightness 8..98
-    if (radio_ok) neopixelWrite(NEOPIXEL_PIN, 0, 0, v);       // blue
-    else          neopixelWrite(NEOPIXEL_PIN, v, 0, 0);       // red = radio fault
+    if (radio_ok) neo(0, 0, v);       // blue
+    else          neo(v, 0, 0);       // red = radio fault
   }
 
   if(millis() >= led_off_time)
@@ -308,7 +350,7 @@ void loop() {
   if(transmitFlag)
   {
     int state;
-    state = radio.startReceive();
+    state = r_start_receive();
     if (state == RADIOLIB_ERR_NONE) {
       // Serial.println(F("success!"));
     } else {
@@ -317,7 +359,7 @@ void loop() {
       radio_ok = false;   // degrade instead of hanging; heartbeat + LED report it
     }
     transmitFlag = false;
-    int len = radio.getPacketLength(true);
+    int len = r_packet_length();
     if(len > 0)
     {
       receivedFlag = true;
@@ -338,15 +380,15 @@ void loop() {
     // you can read received data as an Arduino String
     uint8_t readBuff[256];
     uint8_t pb_buff[512];
-    uint8_t len = radio.getPacketLength(true);
+    uint8_t len = r_packet_length();
     for(i=0;i<256;i++)
     {
       readBuff[i] = 0;
     }
-    int state = radio.readData(readBuff,len);
+    int state = r_read_data(readBuff,len);
 
     if (state == RADIOLIB_ERR_NONE) {
-      neopixelWrite(NEOPIXEL_PIN, 0, 40, 0);   // RX = green
+      neo(0, 40, 0);   // RX = green
       neopixel_off_time = millis() + 200;
       rx_count++;
       update_display_counters();
@@ -354,9 +396,9 @@ void loop() {
       picopb pb(pb_buff,512);
       pb.write_varint(1,1);
       pb.write_string(2,readBuff,len);
-      float rssi = radio.getRSSI(true);
+      float rssi = r_rssi(true);
       pb.write_i32(3,(int)rssi);
-      float snr = radio.getSNR();
+      float snr = r_snr();
       pb.write_i32(4,(int)(snr*4));        // SNR x4 (host divides) [#5 metadata]
       pb.write_i32(6,(uint32_t)millis());  // device rx timestamp (ms) [#5 metadata]
       serial_send(pb_buff,pb.get_length());
@@ -374,7 +416,7 @@ void loop() {
         }
       }
       if(portnum == 77) {
-        neopixelWrite(NEOPIXEL_PIN, 30, 0, 30);  // silent alarm = purple
+        neo(30, 0, 30);  // silent alarm = purple
         neopixel_off_time = millis() + 1000;
         display_status("SILENT ALARM!", 3);
       }
