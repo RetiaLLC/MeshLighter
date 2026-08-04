@@ -40,14 +40,9 @@ function setup() {
     };
   }
   
-  let wsHost = location.hostname ? location.hostname : "127.0.0.1";
-  socket = new WebSocket("ws://" + wsHost + ":8081");
-  socket.onmessage = function(event) {
-    try {
-      let data = JSON.parse(event.data);
-      handleIncomingData(data);
-    } catch (e) { console.error(e); }
-  };
+  // Data now comes from the browser-native read-only source (Web Serial or Demo),
+  // which decodes packets in-browser and calls handleIncomingData(). No server.
+  if (window.VizSource) window.VizSource.autoStart();
 }
 
 function handleIncomingData(data) {
