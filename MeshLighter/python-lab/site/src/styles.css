@@ -52,3 +52,27 @@ button.run-button{background:var(--good);color:#06251a;border-color:var(--good)}
 .generated-file{display:flex;align-items:center;gap:12px;padding:6px 0}
 .generated-file span:first-child{font-family:var(--mono);font-size:13px;flex:1}
 .generated-file-meta{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+
+/* -------------------------------------------------------------- firmware flasher */
+button.ghost{background:transparent;border-color:var(--line2);color:var(--muted)}
+button.ghost:hover{color:var(--ink);border-color:var(--amber-dim)}
+.flash-overlay{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,8,10,.82);backdrop-filter:blur(4px);padding:20px}
+.flash-overlay[hidden]{display:none}
+.flash-card{width:min(600px,100%);background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+  padding:18px 20px;box-shadow:0 24px 60px rgba(0,0,0,.55);max-height:90vh;overflow:auto}
+.flash-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.flash-head h2{margin:0;font-size:1.05rem;color:var(--ink)}
+.flash-x{background:transparent;border:0;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px}
+.flash-x:hover{color:var(--ink)}
+.flash-sub{margin:0 0 14px;font-size:12.5px;color:var(--muted);line-height:1.55}
+.flash-field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);margin-bottom:10px}
+.flash-field select{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--panel2);
+  border:1px solid var(--line2);border-radius:7px;padding:8px 10px}
+.flash-note{margin:0 0 14px;font-size:12px;color:var(--muted);line-height:1.5;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.flash-note code{font-family:var(--mono);color:var(--amber)}
+.flash-actions{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.flash-status{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.flash-log{margin:0;background:#0b1013;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+  font-family:var(--mono);font-size:12px;color:#cdd8da;min-height:80px;max-height:260px;overflow:auto;white-space:pre-wrap}
