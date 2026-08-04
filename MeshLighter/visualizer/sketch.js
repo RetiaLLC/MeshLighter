@@ -41,14 +41,9 @@ function setup() {
     };
   }
   
-  let wsHost = location.hostname ? location.hostname : "127.0.0.1";
-  socket = new WebSocket("ws://" + wsHost + ":8081");
-  socket.onmessage = function(event) {
-    try {
-      let data = JSON.parse(event.data);
-      handleIncomingData(data);
-    } catch (e) { console.error(e); }
-  };
+  // Browser-native read-only source (Web Serial or Demo) decodes in-browser and
+  // calls handleIncomingData(). No Python server / WebSocket.
+  if (window.VizSource) window.VizSource.autoStart();
 }
 
 function handleIncomingData(data) {
