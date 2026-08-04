@@ -24,7 +24,8 @@ def create_user_pb(node_id_int, long_name, short_name, public_key_bytes):
     mac = struct.pack('>Q', node_id_int)[2:]
     pb.encode(4, pypb.PB_STRING, mac)
     pb.encode(5, pypb.PB_VARINT, 255) # PRIVATE_HW
-    pb.encode(6, pypb.PB_VARINT, 1)   # is_licensed
+    # is_licensed REMOVED: =1 trips Meshtastic's "is_licensed mismatch" -> node dropped.
+    # PKI verified/lock comes from public_key (field 8) below.
     pb.encode(7, pypb.PB_VARINT, 0)   # role = CLIENT
     if public_key_bytes:
         pb.encode(8, pypb.PB_STRING, public_key_bytes)

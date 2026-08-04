@@ -24,8 +24,9 @@ def create_user_pb(node_id_int, long_name, short_name, public_key_bytes):
     # hw_model (Field 5): 255 is PRIVATE_HW
     pb.encode(5, pypb.PB_VARINT, 255)
     
-    # is_licensed (Field 6)
-    pb.encode(6, pypb.PB_VARINT, 1)
+    # is_licensed REMOVED (Field 6): =1 on an encrypted NodeInfo trips Meshtastic's
+    # "is_licensed mismatch" and the node is dropped. The verified/lock icon comes from
+    # the public_key (field 8), which is still sent below.
     
     # role (Field 7): 0 is CLIENT
     pb.encode(7, pypb.PB_VARINT, 0)

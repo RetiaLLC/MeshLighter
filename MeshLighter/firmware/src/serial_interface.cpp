@@ -20,6 +20,11 @@ void mt_send(uint8_t *buff, int len);
 
 void serial_send(uint8_t *buffer, int len);
 
+// runtime radio control, defined in main.cpp
+void radio_apply_live();
+void radio_set_sniff(uint8_t sync, bool crc);
+void radio_scan(uint32_t start_khz, uint32_t end_khz, uint32_t step_khz, uint32_t dwell_ms);
+
 void serial_xmit(picopb *pb)
 {
   size_t size;
@@ -102,10 +107,26 @@ void serial_config(picopb *pb)
       case 3:
         Serial.printf("should restart\n");
         ESP.restart();
-
-        uint8_t *crash = (uint8_t *)0;
-        *crash = 0;
         break;
+      case 4:   // #3 apply PHY params live (no reboot)
+        radio_apply_live();
+        break;
+      case 5: { // #5 promiscuous sniff: field3=sync, field4=crc
+        uint64_t sync = 0x2B, crc = 1;
+        t = pb->decode_next(&id,&size); if(id==3 && t==pb_type::VARINT) pb->read_varint(&sync);
+        t = pb->decode_next(&id,&size); if(id==4 && t==pb_type::VARINT) pb->read_varint(&crc);
+        radio_set_sniff((uint8_t)sync, crc != 0);
+        break;
+      }
+      case 6: { // #6 spectrum scan: field3=start_khz,4=end_khz,5=step_khz,6=dwell_ms
+        uint64_t a=902000, b=928000, s=250, d=25;
+        t = pb->decode_next(&id,&size); if(id==3 && t==pb_type::VARINT) pb->read_varint(&a);
+        t = pb->decode_next(&id,&size); if(id==4 && t==pb_type::VARINT) pb->read_varint(&b);
+        t = pb->decode_next(&id,&size); if(id==5 && t==pb_type::VARINT) pb->read_varint(&s);
+        t = pb->decode_next(&id,&size); if(id==6 && t==pb_type::VARINT) pb->read_varint(&d);
+        radio_scan((uint32_t)a,(uint32_t)b,(uint32_t)s,(uint32_t)d);
+        break;
+      }
     }
   }
 }

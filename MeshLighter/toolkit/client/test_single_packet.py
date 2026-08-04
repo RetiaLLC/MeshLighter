@@ -18,7 +18,9 @@ def create_user_pb(node_id_int, long_name, short_name, public_key_bytes):
     mac = struct.pack('>Q', node_id_int)[2:]
     pb.encode(4, pypb.PB_STRING, mac)
     pb.encode(5, pypb.PB_VARINT, 255) # PRIVATE_HW
-    pb.encode(6, pypb.PB_VARINT, 1)   # is_licensed
+    # is_licensed REMOVED: setting is_licensed=1 on an encrypted-channel NodeInfo trips
+    # Meshtastic's "Invalid nodeInfo detected, is_licensed mismatch!" and the node is dropped.
+    # The PKI "verified/lock" indicator comes from the public_key (field 8) below, not this flag.
     pb.encode(9, pypb.PB_VARINT, 0)   # role = CLIENT
     if public_key_bytes:
         pb.encode(8, pypb.PB_STRING, public_key_bytes)

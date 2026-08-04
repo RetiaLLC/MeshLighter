@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshLighter Python Lab</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<link rel="stylesheet" href="src/styles.css">
+<!-- Classic script: defines window.loadPyodide. app.js polls for it. -->
+<script defer src="https://cdn.jsdelivr.net/pyodide/v314.0.3/full/pyodide.js"></script>
+</head>
+<body>
+<main class="app-shell">
+  <section class="compatibility-banner" id="compatibilityBanner" hidden>
+    <h2>Web Serial is not available in this browser</h2>
+    <p>Use Chrome, Edge, Opera or another Chromium browser over HTTPS or localhost.
+       Add <code>?demo=1</code> to the URL to try the lab against a mock radio-pipe.</p>
+  </section>
+
+  <section class="tool-card">
+    <div class="toolbar">
+      <div class="brand">
+        <h1>MeshLighter <span>Python Lab</span></h1>
+        <p class="sub">Write Python that drives a connected radio-pipe Nibble. Pyodide in the browser, Web Serial to the device.</p>
+      </div>
+      <div class="toolbar-actions">
+        <select id="demoSelect" class="demo-select" title="Load a demo"><option value="">Starter script…</option></select>
+        <label class="auth-toggle" title="Injection is disabled until you affirm authorization">
+          <input id="authToggle" type="checkbox"> I am authorized to transmit
+        </label>
+        <button id="connectButton" type="button" class="primary">Connect</button>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <section class="editor-panel">
+        <header class="panel-header">
+          <h2>Code</h2>
+          <div class="panel-actions">
+            <button id="runButton" type="button" class="run-button" disabled>Run</button>
+            <button id="stopButton" type="button" disabled>Stop</button>
+          </div>
+        </header>
+        <div class="editor-surface" id="editor"></div>
+        <textarea class="fallback-editor" id="fallbackEditor" spellcheck="false"></textarea>
+      </section>
+
+      <section class="output-panel">
+        <header class="panel-header">
+          <h2>Output</h2>
+          <div class="panel-actions">
+            <label class="raw-toggle"><input id="rawSerialToggle" type="checkbox"> Show raw serial</label>
+            <button id="clearButton" type="button">Clear</button>
+          </div>
+        </header>
+        <div class="generated-files" id="generatedFilesPanel" hidden>
+          <div class="generated-files-title">Generated files</div>
+          <div id="generatedFilesList"></div>
+        </div>
+        <div class="terminal-surface" id="consoleTerminal"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<!-- xterm UMD builds must load before app.js touches window.Terminal. -->
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

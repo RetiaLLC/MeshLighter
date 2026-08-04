@@ -1,0 +1,54 @@
+:root{
+  --ground:#0c1114; --panel:#141c20; --panel2:#1b262b; --line:#2a353b; --line2:#37454c;
+  --ink:#e3eaeb; --muted:#93a2a8; --amber:#f0b357; --amber-dim:#b98a40; --good:#54d79a; --bad:#ef6f6b;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+  background-image:radial-gradient(1100px 460px at 82% -10%, rgba(240,179,87,.06), transparent 60%);}
+.app-shell{max-width:1400px;margin:0 auto;padding:18px 18px 26px;min-height:100%;display:flex;flex-direction:column;gap:14px}
+code{font-family:var(--mono)}
+
+.compatibility-banner{border:1px solid var(--bad);background:rgba(239,111,107,.08);border-radius:10px;padding:14px 18px}
+.compatibility-banner h2{margin:0 0 6px;font-size:16px;color:var(--bad)}
+.compatibility-banner p{margin:0;color:var(--muted);font-size:14px}
+
+.tool-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:520px}
+.toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel))}
+.brand h1{margin:0;font-size:19px;letter-spacing:-.01em}
+.brand h1 span{color:var(--amber);font-weight:600}
+.brand .sub{margin:3px 0 0;color:var(--muted);font-size:12.5px;max-width:62ch}
+.toolbar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+
+button{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--ink);background:var(--panel2);
+  border:1px solid var(--line2);border-radius:7px;padding:8px 14px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--amber-dim)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--amber);color:#241a05;border-color:var(--amber)}
+button.run-button{background:var(--good);color:#06251a;border-color:var(--good)}
+.demo-select{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--panel2);border:1px solid var(--line2);border-radius:7px;padding:8px 10px}
+.auth-toggle{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--amber);font-family:var(--mono);border:1px solid var(--amber-dim);border-radius:7px;padding:6px 10px;background:rgba(240,179,87,.06);cursor:pointer}
+.raw-toggle{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+
+.workspace{display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1;min-height:0}
+@media(max-width:900px){.workspace{grid-template-columns:1fr}}
+.editor-panel{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.output-panel{display:flex;flex-direction:column;min-height:0}
+.panel-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line)}
+.panel-header h2{margin:0;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber-dim);font-family:var(--mono)}
+.panel-actions{display:flex;gap:8px;align-items:center}
+
+.editor-surface{flex:1;min-height:280px}
+.editor-surface.is-ready + .fallback-editor{display:none}
+.fallback-editor{flex:1;min-height:280px;width:100%;border:0;resize:none;background:#0b1013;color:#cdd8da;font-family:var(--mono);font-size:13px;padding:14px;display:none}
+.editor-surface.is-fallback{display:none}
+.editor-surface.is-fallback + .fallback-editor{display:block}
+
+.terminal-surface{flex:1;min-height:280px;background:#0c1512;padding:8px 6px 4px}
+.generated-files{border-bottom:1px solid var(--line);padding:10px 16px}
+.generated-files-title{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber-dim);margin-bottom:8px}
+.generated-file{display:flex;align-items:center;gap:12px;padding:6px 0}
+.generated-file span:first-child{font-family:var(--mono);font-size:13px;flex:1}
+.generated-file-meta{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}

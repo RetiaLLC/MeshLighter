@@ -1,0 +1,37 @@
+{
+  "build": {
+    "arduino": {
+      "memory_type": "qio_qspi"
+    },
+    "core": "esp32",
+    "extra_flags": [
+      "-DBOARD_HAS_PSRAM",
+      "-DARDUINO_WAVESHARE_ESP32_S3_ZERO",
+      "-DARDUINO_USB_CDC_ON_BOOT=1"
+    ],
+    "f_cpu": "240000000L",
+    "f_flash": "80000000L",
+    "flash_mode": "qio",
+    "psram_type": "qio",
+    "hwids": [
+      ["0x303A", "0x1001"]
+    ],
+    "mcu": "esp32s3",
+    "variant": "lolin_s3_mini"
+  },
+  "connectivity": ["bluetooth", "wifi"],
+  "debug": {
+    "openocd_target": "esp32s3.cfg"
+  },
+  "frameworks": ["arduino", "espidf"],
+  "name": "Waveshare ESP32-S3-Zero (Nibble)",
+  "upload": {
+    "flash_size": "4MB",
+    "maximum_ram_size": 327680,
+    "maximum_size": 4194304,
+    "require_upload_port": true,
+    "speed": 921600
+  },
+  "url": "https://www.waveshare.com/esp32-s3-zero.htm",
+  "vendor": "Waveshare"
+}
