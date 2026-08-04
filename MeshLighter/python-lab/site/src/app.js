@@ -1,5 +1,7 @@
 // MeshLighter Python lab: Pyodide + Monaco + xterm + a binary radio-pipe bridge.
 import { WebSerialConnection, MockRadioPipe } from "./serial.js";
+import { showAuthGate } from "./authgate.js";
+import { flashFirmware } from "./flasher.js";
 
 const PYODIDE_VERSION = "314.0.3";
 const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
@@ -311,6 +313,67 @@ ui.fallbackEditor.value = STARTER_SCRIPT; setCode(STARTER_SCRIPT); updateUi();
 void loadDemoList();
 void loadEditor();
 void loadPython().catch((error) => { writeConsole(`[Pyodide failed: ${error.message || error}]\n`, "error"); updateUi(); });
+
+// -------------------------------------------------------------- firmware flasher
+// A Web-Serial firmware installer (esptool-js) bolted onto the lab's serial layer.
+// Installing transmit-capable firmware is gated behind the authorization affirmation.
+(function setupFlasher() {
+  const overlay = el("flashOverlay"), openBtn = el("flashButton"), closeBtn = el("flashClose");
+  const select = el("flashSelect"), fileInput = el("flashFile"), note = el("flashNote");
+  const goBtn = el("flashGo"), logEl = el("flashLog"), statusEl = el("flashStatus");
+  if (!overlay || !openBtn) return;
+
+  const RADIOPIPE_NOTE = "Radio-pipe image: ships inert. It streams received LoRa frames and transmits only when the lab drives it. Written as a full image at 0x0.";
+  const CUSTOM_NOTE = "Pick any full-flash .bin (written at 0x0). Use this to restore a node to official Meshtastic — grab the ESP32-S3 image from flasher.meshtastic.org first.";
+
+  const flog = (m) => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
+  const openModal = () => { logEl.textContent = ""; statusEl.textContent = ""; overlay.hidden = false; };
+  const closeModal = () => { overlay.hidden = true; };
+
+  openBtn.addEventListener("click", async () => {
+    // Gate every install — an uploaded .bin is unknowable, so it passes the same gate.
+    const ok = await showAuthGate({
+      tool: "Flash firmware",
+      capabilities: [
+        "Transmit arbitrary LoRa / Meshtastic frames on the 900 MHz ISM band",
+        "Inject or spoof packets into any Meshtastic mesh in radio range",
+        "Operate as a promiscuous sniffer of nearby LoRa traffic",
+      ],
+    });
+    if (ok) openModal();
+  });
+  closeBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+
+  select.addEventListener("change", () => {
+    const custom = select.value === "__custom__";
+    note.textContent = custom ? CUSTOM_NOTE : RADIOPIPE_NOTE;
+    if (custom) fileInput.click();
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) statusEl.textContent = `Selected: ${fileInput.files[0].name}`;
+  });
+
+  goBtn.addEventListener("click", async () => {
+    const custom = select.value === "__custom__";
+    const file = custom ? fileInput.files[0] : null;
+    if (custom && !file) { flog("Choose a .bin file first (Firmware → Upload your own)."); return; }
+
+    goBtn.disabled = true; statusEl.textContent = "Flashing…";
+    if (connected) { try { await disconnect(); } catch { /* ignore */ } }  // one process owns the port
+    flog("Starting flash — do not unplug the board.");
+    const ok = await flashFirmware({
+      url: custom ? null : select.value,
+      file,
+      name: custom ? file.name : "Radio-pipe (Nibble Zero)",
+      address: 0x0,
+      onLog: flog,
+      onProgress: (p) => { statusEl.textContent = `Flashing… ${p}%`; },
+    });
+    statusEl.textContent = ok ? "✅ Done — reconnect the node." : "❌ Failed — see log.";
+    goBtn.disabled = false;
+  });
+})();
 
 // Demo-mode convenience: ?demo=1&autorun connects the mock and runs the starter once.
 if (demoMode && new URLSearchParams(location.search).has("autorun")) {

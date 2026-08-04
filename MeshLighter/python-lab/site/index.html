@@ -28,6 +28,7 @@
         <label class="auth-toggle" title="Injection is disabled until you affirm authorization">
           <input id="authToggle" type="checkbox"> I am authorized to transmit
         </label>
+        <button id="flashButton" type="button" class="ghost" title="Install firmware onto a connected ESP32-S3 node">Flash firmware…</button>
         <button id="connectButton" type="button" class="primary">Connect</button>
       </div>
     </div>
@@ -61,8 +62,40 @@
       </section>
     </div>
   </section>
+  <!-- Firmware flasher (esptool-js over Web Serial). Hidden until "Flash firmware…". -->
+  <div class="flash-overlay" id="flashOverlay" hidden>
+    <div class="flash-card" role="dialog" aria-modal="true" aria-label="Flash firmware">
+      <header class="flash-head">
+        <h2>Flash firmware</h2>
+        <button id="flashClose" class="flash-x" type="button" aria-label="Close">×</button>
+      </header>
+      <p class="flash-sub">Install firmware onto a connected <strong>ESP32-S3 Nibble</strong> over USB.
+        Close any other serial monitor first — flashing takes over the port and disconnects the lab's
+        serial link while it runs.</p>
+      <label class="flash-field">
+        <span>Firmware</span>
+        <select id="flashSelect">
+          <option value="firmware/nibble-zero-radiopipe.bin">Radio-pipe — Nibble Zero (transmit-capable)</option>
+          <option value="__custom__">Upload your own .bin… (e.g. official Meshtastic)</option>
+        </select>
+      </label>
+      <input id="flashFile" type="file" accept=".bin,application/octet-stream" hidden>
+      <p class="flash-note" id="flashNote">Radio-pipe image: ships inert. It streams received LoRa frames
+        and transmits only when the lab drives it. Written as a full image at <code>0x0</code>.</p>
+      <div class="flash-actions">
+        <button id="flashGo" class="primary" type="button">Flash at 0x0</button>
+        <span class="flash-status" id="flashStatus"></span>
+      </div>
+      <pre class="flash-log" id="flashLog" aria-live="polite"></pre>
+    </div>
+  </div>
 </main>
 
+<!-- esptool-js is an ES module; expose it on window for the flasher module. -->
+<script type="module">
+  import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.4.1/bundle.js";
+  window.esptooljs = { ESPLoader, Transport };
+</script>
 <!-- xterm UMD builds must load before app.js touches window.Terminal. -->
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
