@@ -86,26 +86,34 @@ class protobuf:
             self.encode_varint(len(data))
             self.buffer += bytes(ord(b) if isinstance(b, str) else b for b in data)
     def to_map(self):
-        m, o, b = {}, 0, self.buffer
-        while o < len(b):
+        # Bounds-safe: a truncated frame must never IndexError or spin. Reads that would
+        # run past the buffer stop the parse and return what was decoded so far.
+        m, o, b, n = {}, 0, self.buffer, len(self.buffer)
+        while o < n:
+            start = o
             key = b[o]; o += 1; idx, typ = key >> 3, key & 7
             if typ == PB_VARINT:
                 num = shift = 0
-                while True:
-                    num |= (b[o] & 0x7f) << shift; shift += 7
-                    if b[o] < 128: o += 1; break
-                    o += 1
+                while o < n:
+                    c = b[o]; o += 1; num |= (c & 0x7f) << shift
+                    if c < 128: break
+                    shift += 7
+                    if shift > 63: break
                 m[idx] = num
             elif typ == PB_STRING:
-                ln = 0; shift = 0
-                while True:
-                    ln |= (b[o] & 0x7f) << shift; shift += 7
-                    if b[o] < 128: o += 1; break
-                    o += 1
+                ln = shift = 0
+                while o < n:
+                    c = b[o]; o += 1; ln |= (c & 0x7f) << shift
+                    if c < 128: break
+                    shift += 7
+                    if shift > 63: break
+                if o + ln > n: break
                 m[idx] = b[o:o+ln]; o += ln
             elif typ == PB_I32:
+                if o + 4 > n: break
                 m[idx] = int.from_bytes(b[o:o+4], 'little', signed=True); o += 4
             else: break
+            if o <= start: break
         return m
 
 # ---------------------------------------------------------------- channel + crypto

@@ -51,17 +51,21 @@
   }
 
   // --- protobuf reader (repeated fields become arrays) ---
-  const rv = (b, o) => { let n = 0, s = 0; for (;;) { n |= (b[o] & 0x7f) << s; s += 7; if (b[o++] < 0x80) return [n >>> 0, o]; } };
+  // rv must never read past the buffer: an unterminated varint at the end used to spin
+  // forever (undefined < 0x80 is false), which froze the tab on any truncated/garbled frame.
+  const rv = (b, o) => { let n = 0, s = 0; while (o < b.length) { const c = b[o++]; n |= (c & 0x7f) << s; if (c < 0x80) return [n >>> 0, o]; s += 7; if (s > 35) break; } return [n >>> 0, o]; };
   function readPb(bytes) {
     const b = bytes; let o = 0; const m = {};
     const put = (i, v) => { if (i in m) { (Array.isArray(m[i]) ? m[i] : (m[i] = [m[i]])).push(v); } else m[i] = v; };
     while (o < b.length) {
+      const start = o;
       let tag; [tag, o] = rv(b, o); const idx = tag >>> 3, typ = tag & 7;
       if (typ === 0) { let v; [v, o] = rv(b, o); put(idx, v); }
-      else if (typ === 2) { let ln; [ln, o] = rv(b, o); put(idx, b.slice(o, o + ln)); o += ln; }
-      else if (typ === 5) { put(idx, b.slice(o, o + 4)); o += 4; }
-      else if (typ === 1) { put(idx, b.slice(o, o + 8)); o += 8; }
+      else if (typ === 2) { let ln; [ln, o] = rv(b, o); if (ln < 0 || o + ln > b.length) break; put(idx, b.slice(o, o + ln)); o += ln; }
+      else if (typ === 5) { if (o + 4 > b.length) break; put(idx, b.slice(o, o + 4)); o += 4; }
+      else if (typ === 1) { if (o + 8 > b.length) break; put(idx, b.slice(o, o + 8)); o += 8; }
       else break;
+      if (o <= start) break;   // forward-progress guarantee: a malformed field can never spin
     }
     return m;
   }

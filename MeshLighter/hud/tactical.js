@@ -314,33 +314,44 @@ window.Tactical = (function () {
     const m = F(); const r = panel(x, y, w, h, "Map · GPS positions", null);
     const now = performance.now();
     const nodes = [...m.nodes.values()].filter((n) => n.lat != null && n.lon != null && now - n.lastHeard < 300000);
+    const box = { x: r.x, y: r.y, w: r.w, h: r.h };
+    push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
+    noStroke(); fill(6, 12, 18); rect(r.x, r.y, r.w, r.h);
     if (!nodes.length) {
+      drawingContext.restore(); pop();
       t("no GPS fixes yet", r.x + r.w / 2, r.y + r.h / 2 - 12, C.muted, 12, CENTER);
       t("nodes appear here once they broadcast a Position (portnum 3)", r.x + r.w / 2, r.y + r.h / 2 + 6, C.dim, 9.5, CENTER);
       return;
     }
     let a0 = Infinity, a1 = -Infinity, o0 = Infinity, o1 = -Infinity;
     for (const n of nodes) { a0 = Math.min(a0, n.lat); a1 = Math.max(a1, n.lat); o0 = Math.min(o0, n.lon); o1 = Math.max(o1, n.lon); }
-    const pa = (a1 - a0) * 0.2 + 0.001, po = (o1 - o0) * 0.2 + 0.001; a0 -= pa; a1 += pa; o0 -= po; o1 += po;
-    const mLat = (a0 + a1) / 2, mLon = (o0 + o1) / 2, lonS = Math.cos(mLat * Math.PI / 180);
-    const sLat = Math.max(1e-6, a1 - a0), sLon = Math.max(1e-6, (o1 - o0) * lonS);
-    const scale = Math.min(r.w / sLon, r.h / sLat), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-    const proj = (la, lo) => ({ x: cx + (lo - mLon) * lonS * scale, y: cy - (la - mLat) * scale });
-    push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
+    const pa = (a1 - a0) * 0.35 + 0.0016, po = (o1 - o0) * 0.35 + 0.0016;
+    const bbox = { minLat: a0 - pa, maxLat: a1 + pa, minLon: o0 - po, maxLon: o1 + po };
+    const tiles = window.MapTiles.draw(drawingContext, bbox, box);
+    const proj = tiles.loaded ? tiles.proj : window.MapTiles.flatProj(bbox, box).proj;
+    if (!tiles.loaded) {   // basemap still loading (or offline) — a faint graticule so it is never blank
+      stroke(C.grid); strokeWeight(1);
+      for (let i = 1; i < 6; i++) { const gx = r.x + r.w * i / 6, gy = r.y + r.h * i / 6; line(gx, r.y, gx, r.y + r.h); line(r.x, gy, r.x + r.w, gy); }
+    }
     const LK = { dm: C.green, route: "#ff9e42", neighbor: "#5b8bff", dir: C.line2 };
     for (const l of m.links) { const A = m.nodes.get(l.a), B = m.nodes.get(l.b); if (!A || !B || A.lat == null || B.lat == null) continue;
-      const P = proj(A.lat, A.lon), Q = proj(B.lat, B.lon); stroke(LK[l.kind] || C.line2); strokeWeight(l.kind === "dm" ? 1.5 : 1); line(P.x, P.y, Q.x, Q.y); }
+      const P = proj(A.lat, A.lon), Q = proj(B.lat, B.lon); stroke(LK[l.kind] || C.line2); strokeWeight(l.kind === "dm" ? 1.6 : 1.1); line(P.x, P.y, Q.x, Q.y); }
     const seen = new Map();
     for (const n of nodes) { const key = n.lat.toFixed(5) + "," + n.lon.toFixed(5); const k = seen.get(key) || 0; seen.set(key, k + 1);
       const p = proj(n.lat, n.lon); if (k) { p.x += Math.cos(k) * 8; p.y += Math.sin(k) * 8; }
+      const c = roleColor(n);
+      drawingContext.save(); drawingContext.shadowBlur = 10; drawingContext.shadowColor = c;
       noStroke(); if (now - n.lastHeard < 1500) { fill(C.ink); ellipse(p.x, p.y, 12, 12); }
-      fill(roleColor(n)); ellipse(p.x, p.y, 7, 7); t(n.sname, p.x + 6, p.y - 5, C.muted, 8.5);
+      fill(c); ellipse(p.x, p.y, 7, 7); drawingContext.restore();
+      t(n.sname, p.x + 6, p.y - 5, C.ink, 8.5);
       S.hits.push({ id: n.id, x: p.x, y: p.y, r: 9 });
     }
     drawingContext.restore(); pop();
-    const kmPerPx = 111.32 / scale, barKm = niceKm(kmPerPx * 90), barPx = barKm / kmPerPx;
+    const mpp = window.MapTiles.mPerPx(nodes[0].lat, tiles.z);   // meters per (logical) pixel at this zoom
+    const barKm = niceKm(mpp * 90 / 1000), barPx = barKm * 1000 / mpp;
     stroke(C.muted); strokeWeight(2); line(r.x + 8, r.y + r.h - 10, r.x + 8 + barPx, r.y + r.h - 10);
     t(barKm >= 1 ? barKm + " km" : (barKm * 1000) + " m", r.x + 12 + barPx, r.y + r.h - 16, C.muted, 8.5);
+    t(window.MapTiles.ATTRIB, r.x + 8, r.y + 3, C.dim, 8);
     t(nodes.length + " positioned · " + (m.nodes.size - nodes.length) + " no fix", r.x + r.w, r.y + r.h - 14, C.dim, 8.5, RIGHT);
   }
 

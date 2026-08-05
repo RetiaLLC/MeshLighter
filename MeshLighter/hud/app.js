@@ -68,7 +68,12 @@ function wireUI() {
   tgc.addEventListener("change", () => { tgo.disabled = !tgc.checked; });
   $("tg-cancel").addEventListener("click", closeGate);
   tg.addEventListener("click", (e) => { if (e.target === tg) closeGate(); });
-  tgo.addEventListener("click", async () => { closeGate(); toast("running traceroute…"); const r = await window.VizSource.traceroute(); toast(r.msg); });
+  tgo.addEventListener("click", async () => {
+    closeGate(); const btn = $("btn-trace"); btn.disabled = true; toast("running traceroute…");
+    try { const r = await window.VizSource.traceroute(); toast(r && r.msg ? r.msg : "traceroute done"); }
+    catch (e) { toast("traceroute failed"); }
+    finally { btn.disabled = false; }
+  });
 
   if (!("serial" in navigator)) { const cb = $("btn-connect"); cb.disabled = true; cb.title = "Web Serial needs Chrome/Edge/Opera over HTTPS"; }
 }

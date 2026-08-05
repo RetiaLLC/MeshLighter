@@ -102,9 +102,17 @@
   const pv = (i, n) => [i << 3 | 0, ...vi(n)];
   const ps = (i, b) => { b = Array.from(b); return [i << 3 | 2, ...vi(b.length), ...b]; };
   const frameBytes = (pl) => { pl = Array.from(pl); return Uint8Array.from([0x94, 0xc3, (pl.length >> 8) & 0xff, pl.length & 0xff, ...pl]); };
-  async function writePort(bytes) {
-    if (!port || !port.writable) return; const w = port.writable.getWriter();
-    try { await w.write(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes)); } finally { w.releaseLock(); }
+  // All writes go through one promise chain: two concurrent getWriter() calls on the same
+  // stream throw "locked", so overlapping traceroute runs must queue, not race.
+  let writeChain = Promise.resolve();
+  function writePort(bytes) {
+    const buf = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+    writeChain = writeChain.then(async () => {
+      if (!port || !port.writable) return;
+      const w = port.writable.getWriter();
+      try { await w.write(buf); } finally { try { w.releaseLock(); } catch {} }
+    }).catch(() => {});
+    return writeChain;
   }
   function setChannel(name, psk) { const r = D().setChannel(name || "LongFast", psk || "default"); return r; }
   async function setFrequency(mhz) {
@@ -134,13 +142,18 @@
     const from = pick(NODES), via = pick(NODES.filter((x) => x !== from)), to = pick(NODES.filter((x) => x !== from && x !== via));
     M().ingest({ from: hexid(from.num), to: hexid(to.num), ...meta(), portnum: 70, type: "traceroute", route: [hexid(from.num), hexid(via.num), hexid(to.num)] });
   }
+  let tracerouting = false;
   async function traceroute() {
     if (mode === "demo") { demoTraceroute(); setTimeout(demoTraceroute, 600); setTimeout(demoTraceroute, 1200); return { ok: true, msg: "traceroute simulated across the mesh" }; }
     if (mode === "serial") {
+      if (tracerouting) return { ok: false, msg: "traceroute already running" };
       const recent = M().nodesByRecent().slice(0, 6);
       if (!recent.length) return { ok: false, msg: "no nodes seen yet to query" };
-      for (const n of recent) { await injectTraceroute(n.id); await new Promise((r) => setTimeout(r, 700)); }
-      return { ok: true, msg: `traceroute query sent to ${recent.length} node(s)` };
+      tracerouting = true;
+      try {
+        for (const n of recent) { try { await injectTraceroute(n.id); } catch {} await new Promise((r) => setTimeout(r, 700)); }
+        return { ok: true, msg: `traceroute query sent to ${recent.length} node(s)` };
+      } finally { tracerouting = false; }
     }
     return { ok: false, msg: "start Demo Mode or connect a radio-pipe" };
   }
