@@ -48,10 +48,10 @@ export function showAuthGate(opts = {}) {
     overlay.className = "authgate-overlay";
     overlay.innerHTML = `
       <div class="authgate-card" role="dialog" aria-modal="true">
-        <h2>Heads up — transmit-capable firmware</h2>
+        <h2>Heads up: transmit-capable firmware</h2>
         <p class="authgate-sub"><strong>${tool}</strong> writes the radio-pipe firmware
-          to the connected board. It ships <em>inert</em> — no attack tooling, and it does
-          nothing on its own — but once installed the firmware can:</p>
+          to the connected board. It ships <em>inert</em> and does nothing on its own.
+          Once installed, the firmware can:</p>
         <ul>${caps.map((c) => `<li>${c}</li>`).join("")}</ul>
         <label class="authgate-affirm">
           <input type="checkbox" id="authgate-check" />
@@ -61,7 +61,7 @@ export function showAuthGate(opts = {}) {
         </label>
         <div class="authgate-actions">
           <button class="authgate-btn" id="authgate-cancel">Cancel</button>
-          <button class="authgate-btn primary" id="authgate-go" disabled>I understand — continue</button>
+          <button class="authgate-btn primary" id="authgate-go" disabled>I understand, continue</button>
         </div>
         <p class="authgate-legal">Demo Mode and read-only Python scripting need none of this
           and are always available without the gate.</p>

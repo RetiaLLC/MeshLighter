@@ -14,7 +14,7 @@ const DEVICE_METHODS = ["connect", "disconnect", "sleep", "send_frame", "read_fr
   "set_freq", "set_power", "sniff", "scan", "send_nodeinfo", "send_position",
   "send_text", "send_portnum", "monitor"];
 
-const STARTER_SCRIPT = `# MeshLighter Python lab — Connect a radio-pipe Nibble, then Run.
+const STARTER_SCRIPT = `# MeshLighter Python lab. Connect a radio-pipe Nibble, then Run.
 # Passive tools (scan/monitor) work ungated. Injection needs the "I am authorized" box.
 from device import dev
 import mesh
@@ -304,7 +304,7 @@ ui.run.addEventListener("click", () => void runPython());
 ui.stop.addEventListener("click", stopPython);
 ui.clear.addEventListener("click", () => { term.clear(); rxBytes = []; generatedFiles.clear(); renderGeneratedFiles(); });
 ui.rawSerial.addEventListener("change", () => { showRawSerial = ui.rawSerial.checked; });
-ui.auth.addEventListener("change", () => { authorizedFlag = ui.auth.checked; if (authorizedFlag) writeConsole("[authorized to transmit — injection demos enabled]\n", "system"); });
+ui.auth.addEventListener("change", () => { authorizedFlag = ui.auth.checked; if (authorizedFlag) writeConsole("[authorized to transmit, injection demos enabled]\n", "system"); });
 ui.demoSelect.addEventListener("change", () => void loadDemo(ui.demoSelect.value));
 window.addEventListener("resize", fitTerminal);
 window.addEventListener("beforeunload", () => { if (connected) void serial.disconnect("Page closed"); });
@@ -324,7 +324,7 @@ void loadPython().catch((error) => { writeConsole(`[Pyodide failed: ${error.mess
   if (!overlay || !openBtn) return;
 
   const RADIOPIPE_NOTE = "Radio-pipe image: ships inert. It streams received LoRa frames and transmits only when the lab drives it. Written as a full image at 0x0.";
-  const CUSTOM_NOTE = "Pick any full-flash .bin (written at 0x0). Use this to restore a node to official Meshtastic — grab the ESP32-S3 image from flasher.meshtastic.org first.";
+  const CUSTOM_NOTE = "Pick any full-flash .bin (written at 0x0). Use this to restore a node to official Meshtastic. Grab the ESP32-S3 image from flasher.meshtastic.org first.";
 
   const flog = (m) => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
   const openModal = () => { logEl.textContent = ""; statusEl.textContent = ""; overlay.hidden = false; };
@@ -361,7 +361,7 @@ void loadPython().catch((error) => { writeConsole(`[Pyodide failed: ${error.mess
 
     goBtn.disabled = true; statusEl.textContent = "Flashing…";
     if (connected) { try { await disconnect(); } catch { /* ignore */ } }  // one process owns the port
-    flog("Starting flash — do not unplug the board.");
+    flog("Starting flash. Do not unplug the board.");
     const ok = await flashFirmware({
       url: custom ? null : select.value,
       file,
@@ -370,7 +370,7 @@ void loadPython().catch((error) => { writeConsole(`[Pyodide failed: ${error.mess
       onLog: flog,
       onProgress: (p) => { statusEl.textContent = `Flashing… ${p}%`; },
     });
-    statusEl.textContent = ok ? "✅ Done — reconnect the node." : "❌ Failed — see log.";
+    statusEl.textContent = ok ? "✅ Done, reconnect the node." : "❌ Failed, see log.";
     goBtn.disabled = false;
   });
 })();

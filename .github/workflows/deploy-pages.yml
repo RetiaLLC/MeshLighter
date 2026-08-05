@@ -4,9 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'MeshLighter/pages/**'
-      - 'MeshLighter/Advanced_Visualizer/**'
-      - 'MeshLighter/visualizer/**'
+      - 'MeshLighter/hud/**'
       - 'MeshLighter/python-lab/site/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
@@ -29,18 +27,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          cp MeshLighter/pages/index.html _site/index.html
+          # Root drops straight into the visualizer (Tactical HUD + Neural Mesh over one model).
+          cp -r MeshLighter/hud/. _site/
+          # The Python lab (scripting + gated flasher) lives under /lab/.
+          cp -r MeshLighter/python-lab/site _site/lab
           touch _site/.nojekyll
-          echo 'meshlighter.site' > _site/CNAME   # custom domain — kept across redeploys
-          cp -r MeshLighter/Advanced_Visualizer _site/neural-mesh
-          cp -r MeshLighter/visualizer          _site/mesh
-          cp -r MeshLighter/python-lab/site      _site/lab
-          # Strip the Python server + any bundled toolkit from the PUBLISHED visualizers.
-          # The visualizers are browser-native now; the offensive CLI must not ship in the site.
-          rm -rf _site/neural-mesh/toolkit _site/mesh/toolkit
-          rm -f  _site/neural-mesh/visual_server.py _site/neural-mesh/start_*.sh
-          rm -f  _site/mesh/visual_server.py        _site/mesh/start_*.sh
-          find _site/neural-mesh _site/mesh -name '*.py' -delete || true
+          echo 'meshlighter.site' > _site/CNAME    # custom domain, kept across redeploys
+          # The offensive CLI toolkit must never ship in the hosted site.
+          rm -rf _site/lab/toolkit
           echo "Published tree:"; find _site -maxdepth 2 | sort
       - uses: actions/upload-pages-artifact@v3
         with:

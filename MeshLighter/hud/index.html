@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshLighter · Tactical Mesh Visualizer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📡</text></svg>">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+</head>
+<body>
+<div id="canvas-container"></div>
+
+<div id="ui-overlay">
+  <div class="hud top-right">
+    <button class="style-btn active" data-style="tactical">Tactical HUD</button>
+    <button class="style-btn" data-style="neural">Neural Mesh</button>
+  </div>
+
+  <div class="hud bottom-bar">
+    <button id="btn-demo" class="btn">Demo Mode</button>
+    <button id="btn-connect" class="btn primary">Connect radio-pipe</button>
+    <button id="btn-clear" class="btn" title="Wipe accumulated data">Clear</button>
+    <a id="lnk-lab" class="btn" href="lab/">Lab &amp; tools ↗</a>
+    <button id="btn-hide" class="btn ghost" title="Toggle chrome (or press M)">Hide UI</button>
+    <span class="passive" title="This visualizer only reads. It never transmits.">passive · read-only</span>
+  </div>
+</div>
+
+<!-- p5 → decode → model → renderers → source → app shell -->
+<script src="mesh-decode.js"></script>
+<script src="model.js"></script>
+<script src="tactical.js"></script>
+<script src="neural.js"></script>
+<script src="source.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
