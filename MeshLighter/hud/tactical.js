@@ -30,7 +30,8 @@ window.Tactical = (function () {
   const roleColor = (n) => ROLECOL[roleName(n)] || C.cyan;
   const HUD = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
-  const S = { rosterScroll: 0, feedScroll: 0, msgScroll: 0, sweep: 0, fx: new Map() }; // fx = graph positions
+  const S = { rosterScroll: 0, feedScroll: 0, msgScroll: 0, sweep: 0, fx: new Map(),
+    selected: null, hits: [], rosterHits: [], detailRect: null };   // hits = clickable node targets
   const F = () => window.MeshModel;
 
   // ---- primitives -------------------------------------------------------------
@@ -112,6 +113,7 @@ window.Tactical = (function () {
       t(age < 1 ? "now" : age < 90 ? (age | 0) + "s" : ((age / 60) | 0) + "m", rx, ry + 4, C.dim, 9.5, RIGHT);
       t((m.HW[n.hw] || "").slice(0, 9), rx, ry + 17, C.dim, 8.5, RIGHT);
       stroke(C.grid); strokeWeight(1); line(r.x - 4, ry + rh - 2, r.x + r.w + 4, ry + rh - 2);
+      S.rosterHits.push({ id: n.id, x: r.x - 6, y: ry, w: r.w + 10, h: rh });
     }
     drawingContext.restore(); pop();
     scrollbar(r.x + r.w + 3, r.y, r.h, S.rosterScroll, rows.length, vis);
@@ -145,6 +147,7 @@ window.Tactical = (function () {
       noStroke(); if (near) { fill(C.ink); ellipse(px, py, 10, 10); }   // range = SNR, colour = flavor
       fill(roleColor(n)); ellipse(px, py, 5.5, 5.5);
       t(n.sname, px + 6, py - 5, near ? C.ink : C.muted, 8.5);
+      S.hits.push({ id: n.id, x: px, y: py, r: 9 });
     }
     noStroke(); fill(C.cyan); ellipse(cx, cy, 7, 7); stroke(C.cyan); noFill(); ellipse(cx, cy, 13, 13);
     t("RX", cx + 8, cy + 4, C.cyan, 8);
@@ -191,6 +194,7 @@ window.Tactical = (function () {
       if (now - n.lastHeard < 1200) { fill(C.ink); ellipse(p.x, p.y, s + 5, s + 5); }
       fill(roleColor(n)); ellipse(p.x, p.y, s, s);
       t(n.sname, p.x + s / 2 + 3, p.y - 5, C.muted, 8.5);
+      S.hits.push({ id: n.id, x: p.x, y: p.y, r: s + 5 });
     }
     drawingContext.restore(); pop();
     // FLAVOR colour key — roles currently present
@@ -279,16 +283,18 @@ window.Tactical = (function () {
     scrollbar(r.x + r.w + 3, r.y, r.h, S.feedScroll, rows.length, vis); S.feedRect = r;
   }
 
-  // ---- decoded channel messages ----------------------------------------------
+  // ---- decoded channel messages (chat-style: newest at the bottom) -----------
   function messages(x, y, w, h) {
     const m = F(); const r = panel(x, y, w, h, "Channel Messages", m.messages.length);
-    const rows = m.messages.slice().reverse(), lh = 30, vis = Math.floor(r.h / lh);
-    S.msgScroll = constrain(S.msgScroll, 0, Math.max(0, rows.length - vis));
+    const rows = m.messages, lh = 30, vis = Math.max(1, Math.floor(r.h / lh));
+    const maxScroll = Math.max(0, rows.length - vis);
+    S.msgScroll = constrain(S.msgScroll, 0, maxScroll);         // 0 = pinned to newest
+    const start = Math.max(0, rows.length - vis - S.msgScroll);
     push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
     const now = performance.now();
     if (!rows.length) t("no text messages decoded yet", r.x, r.y + 4, C.dim, 10);
-    for (let i = 0; i < vis + 1; i++) {
-      const e = rows[i + Math.floor(S.msgScroll)]; if (!e) break; const ry = r.y + i * lh;
+    for (let i = 0; i < vis; i++) {
+      const e = rows[start + i]; if (!e) continue; const ry = r.y + i * lh;
       const dst = e.to && e.to !== m.BROADCAST ? ((m.nodes.get(e.to) || {}).sname || "?") : "all";
       const dt = new Date(Date.now() - (now - e.t));
       t(("0" + dt.getHours()).slice(-2) + ":" + ("0" + dt.getMinutes()).slice(-2), r.x, ry + 1, C.dim, 9);
@@ -298,12 +304,14 @@ window.Tactical = (function () {
       stroke(C.grid); strokeWeight(1); line(r.x, ry + lh - 3, r.x + r.w, ry + lh - 3);
     }
     drawingContext.restore(); pop();
-    scrollbar(r.x + r.w + 3, r.y, r.h, S.msgScroll, rows.length, vis); S.msgRect = r;
+    scrollbar(r.x + r.w + 3, r.y, r.h, start, rows.length, vis); S.msgRect = r;
+    if (S.msgScroll > 0) t("↓ jump to newest (scroll down)", r.x + r.w, r.y + r.h - 11, C.amber, 8.5, RIGHT);
   }
 
   function draw(status) {
     background(C.bg);
     F().prune();
+    S.hits = []; S.rosterHits = [];
     const W = width, H = height, p = 12;
     const headH = 46, footH = Math.max(120, H * 0.2);
     const bodyY = p + headH + p, bodyH = H - bodyY - footH - p * 2;
@@ -320,13 +328,47 @@ window.Tactical = (function () {
     const availW = W - p * 3, feedW = availW * 0.58;
     feed(p, H - footH - p, feedW, footH);
     messages(p + feedW + p, H - footH - p, availW - feedW, footH);
+    detail();
+  }
+
+  // ---- click-to-inspect a node ------------------------------------------------
+  const ago = (t0) => { const s = (performance.now() - t0) / 1000; return s < 90 ? (s | 0) + "s" : s < 5400 ? (s / 60 | 0) + "m" : (s / 3600 | 0) + "h"; };
+  function detail() {
+    if (!S.selected) { S.detailRect = null; return; }
+    const m = F(), n = m.nodes.get(S.selected); if (!n) { S.selected = null; return; }
+    const rows = [["Node ID", n.id], ["Role", roleName(n)], ["Hardware", m.HW[n.hw] || "unknown"],
+      ["Signal", (n.snr != null ? n.snr + " dB SNR" : "—") + "   " + (n.rssi != null ? n.rssi + " dBm" : "")],
+      ["Hops away", n.hops != null ? String(n.hops) : "—"],
+      ["Battery", n.battery != null ? n.battery + "%" + (n.voltage ? "  " + n.voltage + " V" : "") : "—"]];
+    if (n.chanUtil != null || n.airUtil != null) rows.push(["Airtime", (n.chanUtil != null ? "ch " + n.chanUtil + "%" : "") + (n.airUtil != null ? "   tx " + n.airUtil + "%" : "")]);
+    if (n.temp != null || n.humidity != null) rows.push(["Environment", (n.temp != null ? n.temp + " °C" : "") + (n.humidity != null ? "   " + n.humidity + "% rh" : "")]);
+    if (n.lat != null) rows.push(["Position", n.lat.toFixed(5) + ", " + n.lon.toFixed(5) + (n.alt != null ? "  " + n.alt + " m" : "")]);
+    rows.push(["Security", n.pki ? "PKI key on file" : "no key seen"]);
+    rows.push(["Traffic", n.count + " pkts   first heard " + ago(n.firstHeard) + " ago"]);
+    const w = 356, h = 34 + rows.length * 17 + 6, x = width / 2 - w / 2, y = 58;
+    noStroke(); fill(6, 14, 20, 244); rect(x, y, w, h, 6); stroke(roleColor(n)); strokeWeight(1.4); noFill(); rect(x, y, w, h, 6);
+    noStroke(); fill(roleColor(n)); ellipse(x + 16, y + 15, 9, 9);
+    t(n.name || n.sname, x + 26, y + 9, C.ink, 13); t(n.sname, x + 26 + textWidth(n.name || n.sname) + 8, y + 11, C.dim, 10);
+    t("✕", x + w - 17, y + 9, C.muted, 14); stroke(C.line); strokeWeight(1); line(x + 8, y + 30, x + w - 8, y + 30);
+    let ly = y + 36; for (const [k, v] of rows) { t(k, x + 12, ly, C.dim, 9.5); t(String(v), x + 116, ly, C.ink, 10.5); ly += 17; }
+    S.detailRect = { x, y, w, h, cx: x + w - 15, cy: y + 12 };
+  }
+  function onClick(mx, my) {
+    if (S.detailRect) { const d = S.detailRect;
+      if (Math.hypot(mx - d.cx, my - d.cy) < 13) { S.selected = null; S.detailRect = null; return; }
+      if (mx > d.x && mx < d.x + d.w && my > d.y && my < d.y + d.h) return;   // click inside panel: keep open
+    }
+    for (const h of S.rosterHits) if (mx > h.x && mx < h.x + h.w && my > h.y && my < h.y + h.h) { S.selected = h.id; return; }
+    let best = null, bd = 1e9;
+    for (const h of S.hits) { const d = Math.hypot(mx - h.x, my - h.y); if (d < h.r + 5 && d < bd) { bd = d; best = h.id; } }
+    S.selected = best;   // null when clicking empty space collapses the panel
   }
 
   function onWheel(dy, mx, my) {
     const inR = (r) => r && mx > r.x - 6 && mx < r.x + r.w + 8 && my > r.y && my < r.y + r.h;
     if (inR(S.rosterRect)) S.rosterScroll += dy > 0 ? 1 : -1;
     else if (inR(S.feedRect)) S.feedScroll += dy > 0 ? 1 : -1;
-    else if (inR(S.msgRect)) S.msgScroll += dy > 0 ? 1 : -1;
+    else if (inR(S.msgRect)) S.msgScroll += dy > 0 ? -1 : 1;   // chat-style: down = newer, up = older
   }
-  return { draw, onWheel };
+  return { draw, onWheel, onClick, select: (id) => { S.selected = id; } };
 })();

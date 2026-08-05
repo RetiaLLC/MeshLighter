@@ -14,7 +14,8 @@ window.Neural = (function () {
 
   function pos(n) {
     let p = NS.pos.get(n.id);
-    if (!p) { p = { x: n.sx * width, y: 0.14 * height + n.sy * 0.72 * height, vx: 0, vy: 0 }; NS.pos.set(n.id, p); }
+    if (!p) { const s = Math.min(width, height) * 0.34;   // seed near centre, not full-screen
+      p = { x: width / 2 + (n.sx - 0.5) * s, y: height / 2 + (n.sy - 0.5) * s, vx: 0, vy: 0 }; NS.pos.set(n.id, p); }
     return p;
   }
 
@@ -26,9 +27,10 @@ window.Neural = (function () {
     // forces
     for (const a of live) {
       const pa = pos(a); let fx = 0, fy = 0;
-      for (const b of live) { if (a === b) continue; const pb = pos(b); const dx = pa.x - pb.x, dy = pa.y - pb.y, d2 = dx * dx + dy * dy + 0.01; const f = 900 / d2; fx += dx * f; fy += dy * f; }
-      fx += (width / 2 - pa.x) * 0.0016; fy += (height / 2 - pa.y) * 0.0016;
-      pa.vx = (pa.vx + fx) * 0.86; pa.vy = (pa.vy + fy) * 0.86;
+      for (const b of live) { if (a === b) continue; const pb = pos(b); let dx = pa.x - pb.x, dy = pa.y - pb.y, d2 = dx * dx + dy * dy + 0.01;
+        const f = Math.min(0.9, 4200 / d2); fx += dx * f; fy += dy * f; }   // capped repulsion (keep spacing without launching to the edge)
+      fx += (width / 2 - pa.x) * 0.02; fy += (height / 2 - pa.y) * 0.02;      // firm gravity keeps the cluster centred
+      pa.vx = (pa.vx + fx) * 0.84; pa.vy = (pa.vy + fy) * 0.84;
     }
     for (const l of m.links) {
       if (!ids.has(l.a) || !ids.has(l.b)) continue; const pa = pos(m.nodes.get(l.a)), pb = pos(m.nodes.get(l.b));

@@ -11,23 +11,22 @@ function setup() {
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   textFont('ui-monospace, "SF Mono", Menlo, Consolas, monospace');
   const s = new URLSearchParams(location.search).get("style");
-  if (s === "neural" || s === "tactical") activeStyle = s;
+  if (["neural", "tactical", "map"].includes(s)) activeStyle = s;
   wireUI();
   window.VizSource.autoStart();
 }
 
-function draw() {
-  const status = window.VizSource.status();
-  (activeStyle === "neural" ? window.Neural : window.Tactical).draw(status);
+function renderer() {
+  return activeStyle === "neural" ? window.Neural : activeStyle === "map" ? window.MapView : window.Tactical;
 }
-
-function mouseWheel(e) {
-  const r = activeStyle === "neural" ? window.Neural : window.Tactical;
-  if (r.onWheel) r.onWheel(e.deltaY, mouseX, mouseY);
-  return false;
-}
+function draw() { renderer().draw(window.VizSource.status()); }
+function mouseWheel(e) { const r = renderer(); if (r.onWheel) r.onWheel(e.deltaY, mouseX, mouseY); return false; }
+function mousePressed() { const r = renderer(); if (r.onClick) r.onClick(mouseX, mouseY); }
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
-function keyPressed() { if (key === "m" || key === "M") document.getElementById("ui-overlay").classList.toggle("hidden"); }
+function keyPressed() {
+  if (key === "m" || key === "M") document.getElementById("ui-overlay").classList.toggle("hidden");
+  if (keyCode === ESCAPE && window.Tactical.onClick) window.Tactical.onClick(-1, -1);   // deselect
+}
 
 function wireUI() {
   const $ = (id) => document.getElementById(id);

@@ -90,13 +90,33 @@ class Device:
         return await self._tx(src, portnum, mesh.data_pb(portnum, pl))
 
     async def monitor(self, seconds=20):
+        PORTS = {0: 'UNKNOWN', 1: 'TEXT', 3: 'POSITION', 4: 'NODEINFO', 5: 'ROUTING',
+                 6: 'ADMIN', 67: 'TELEMETRY', 70: 'TRACEROUTE', 71: 'NEIGHBORINFO'}
+        def s(x): return x.decode('utf-8', 'replace') if isinstance(x, (bytes, bytearray)) else str(x)
         t0 = time.time(); n = 0
         while time.time() - t0 < seconds:
             for f in await self.read_frames(0.3, 0.1):
                 d = mesh.decode_rx(f, CH)
-                if d and d.get('portnum') is not None:
-                    print('RX src=%s portnum=%s rssi=%s snr=%.2f' % (hex(d['src']), d['portnum'], d['rssi'], d['snr']))
-                    n += 1
+                if not d or d.get('portnum') is None:
+                    continue
+                n += 1; pn = d['portnum']; pl = d.get('payload', b'') or b''
+                info = ''
+                try:
+                    if pn == 1:                               # TEXT -> the message
+                        info = '"%s"' % s(pl)
+                    elif pn == 4:                             # NODEINFO -> long (short) name
+                        u = mesh.protobuf(pl).to_map(); info = '%s (%s)' % (s(u.get(2, b'?')), s(u.get(3, b'')))
+                    elif pn == 3:                             # POSITION -> lat, lon
+                        q = mesh.protobuf(pl).to_map()
+                        if isinstance(q.get(1), int): info = '%.5f, %.5f' % (q[1] * 1e-7, q.get(2, 0) * 1e-7)
+                    elif pn == 67:                            # TELEMETRY -> battery %
+                        dm = mesh.protobuf(pl).to_map().get(2)
+                        if isinstance(dm, (bytes, bytearray)):
+                            b = mesh.protobuf(dm).to_map().get(1)
+                            if b is not None: info = 'battery %s%%' % b
+                except Exception:
+                    pass
+                print('RX %-11s src=%s rssi=%s snr=%.1f  %s' % (PORTS.get(pn, pn), hex(d['src']), d['rssi'], d['snr'], info))
             await self.sleep(0.05)
         print('(%d packets in %ss)' % (n, seconds)); return n
 
