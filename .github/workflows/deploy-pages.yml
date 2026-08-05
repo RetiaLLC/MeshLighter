@@ -31,6 +31,7 @@ jobs:
           mkdir -p _site
           cp MeshLighter/pages/index.html _site/index.html
           touch _site/.nojekyll
+          echo 'meshlighter.site' > _site/CNAME   # custom domain — kept across redeploys
           cp -r MeshLighter/Advanced_Visualizer _site/neural-mesh
           cp -r MeshLighter/visualizer          _site/mesh
           cp -r MeshLighter/python-lab/site      _site/lab
