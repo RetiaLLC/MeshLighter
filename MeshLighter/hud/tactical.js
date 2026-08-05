@@ -22,10 +22,15 @@ window.Tactical = (function () {
     routing: "#8fa6b4", traceroute: "#ff9e42", neighbor: "#5b8bff", admin: "#ff5a6a",
     pkc: "#ff5bd0", data: "#7f95a6",
   };
-  const ROLECOL = { ROUTER: C.amber, ROUTER_CLIENT: C.amber, REPEATER: "#bf5bff", SENSOR: C.green, TRACKER: "#ff9e42" };
+  // node "flavor" = Meshtastic role, each a distinct colour (see the FLAVOR key in the graph)
+  const ROLECOL = { CLIENT: "#33e1ff", CLIENT_MUTE: "#7f95a6", ROUTER: "#f5b642", ROUTER_CLIENT: "#ffcf6b",
+    REPEATER: "#bf5bff", TRACKER: "#ff9e42", SENSOR: "#35ff9e", TAK: "#ff5a6a", TAK_TRACKER: "#ff8090",
+    CLIENT_HIDDEN: "#5b8bff", LOST_FOUND: "#ff5bd0" };
+  const roleName = (n) => (window.MeshModel.ROLE[n.role] || "CLIENT");
+  const roleColor = (n) => ROLECOL[roleName(n)] || C.cyan;
   const HUD = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
-  const S = { rosterScroll: 0, feedScroll: 0, sweep: 0, fx: new Map() }; // fx = graph positions
+  const S = { rosterScroll: 0, feedScroll: 0, msgScroll: 0, sweep: 0, fx: new Map() }; // fx = graph positions
   const F = () => window.MeshModel;
 
   // ---- primitives -------------------------------------------------------------
@@ -89,9 +94,8 @@ window.Tactical = (function () {
       const n = rows[i + Math.floor(S.rosterScroll)]; if (!n) break;
       const ry = r.y + i * rh; const fresh = now - n.lastHeard < 1500;
       if (fresh) { noStroke(); fill("#0c2027"); rect(r.x - 4, ry, r.w + 8, rh - 2); }
-      const rolen = m.ROLE[n.role] || "";
-      // role dot + short name
-      noStroke(); fill(ROLECOL[rolen] || C.cyan); ellipse(r.x + 5, ry + 9, 6, 6);
+      // role ("flavor") dot + short name
+      noStroke(); fill(roleColor(n)); ellipse(r.x + 5, ry + 9, 6, 6);
       t(n.sname, r.x + 14, ry + 3, C.ink, 12);
       if (n.pki) t("🔒", r.x + 14 + textWidth(n.sname) + 4, ry + 3, C.green, 10);
       t(trunc(n.name || m.HW[n.hw] || "—", 22), r.x + 14, ry + 17, C.muted, 9.5);
@@ -138,8 +142,8 @@ window.Tactical = (function () {
       const q = n.snr == null ? 0.5 : constrain((n.snr + 18) / 32, 0, 1);
       const rr = R * (1 - q * 0.92); const px = cx + cos(a) * rr, py = cy + sin(a) * rr;
       const near = ((sa - a + TWO_PI) % TWO_PI) < 0.5; // brighten as sweep passes
-      noStroke(); fill(sigColor(n.snr)); if (near) { fill(C.cyan); ellipse(px, py, 9, 9); }
-      ellipse(px, py, 5, 5);
+      noStroke(); if (near) { fill(C.ink); ellipse(px, py, 10, 10); }   // range = SNR, colour = flavor
+      fill(roleColor(n)); ellipse(px, py, 5.5, 5.5);
       t(n.sname, px + 6, py - 5, near ? C.ink : C.muted, 8.5);
     }
     noStroke(); fill(C.cyan); ellipse(cx, cy, 7, 7); stroke(C.cyan); noFill(); ellipse(cx, cy, 13, 13);
@@ -185,10 +189,18 @@ window.Tactical = (function () {
       const rolen = m.ROLE[n.role] || ""; const hub = rolen.includes("ROUTER") || rolen === "REPEATER";
       noStroke(); fill(ROLECOL[rolen] || C.cyan); const s = hub ? 9 : 6 + Math.min(4, n.count / 8);
       if (now - n.lastHeard < 1200) { fill(C.ink); ellipse(p.x, p.y, s + 5, s + 5); }
-      fill(ROLECOL[rolen] || C.cyan); ellipse(p.x, p.y, s, s);
+      fill(roleColor(n)); ellipse(p.x, p.y, s, s);
       t(n.sname, p.x + s / 2 + 3, p.y - 5, C.muted, 8.5);
     }
     drawingContext.restore(); pop();
+    // FLAVOR colour key — roles currently present
+    const present = [...new Set(live.map(roleName))].slice(0, 8);
+    if (present.length) {
+      noStroke(); fill(4, 8, 12, 214); rect(r.x + r.w - 104, r.y + 2, 102, (present.length + 1) * 13 + 6, 3);
+      t("FLAVOR", r.x + r.w - 96, r.y + 6, C.dim, 8);
+      let ky = r.y + 19;
+      for (const rn of present) { noStroke(); fill(ROLECOL[rn] || C.cyan); ellipse(r.x + r.w - 92, ky + 4, 7, 7); t(rn.replace(/_/g, " "), r.x + r.w - 82, ky, C.muted, 8.5); ky += 13; }
+    }
   }
 
   // ---- traffic by type --------------------------------------------------------
@@ -250,6 +262,7 @@ window.Tactical = (function () {
   function feed(x, y, w, h) {
     const m = F(); const r = panel(x, y, w, h, "Intel Feed", m.events.length);
     const rows = m.events.slice().reverse(), lh = 15, vis = Math.floor(r.h / lh);
+    S.feedScroll = constrain(S.feedScroll, 0, Math.max(0, rows.length - vis));   // clamp: never scroll into the void
     push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
     const now = performance.now();
     for (let i = 0; i < vis + 1; i++) {
@@ -264,6 +277,28 @@ window.Tactical = (function () {
     }
     drawingContext.restore(); pop();
     scrollbar(r.x + r.w + 3, r.y, r.h, S.feedScroll, rows.length, vis); S.feedRect = r;
+  }
+
+  // ---- decoded channel messages ----------------------------------------------
+  function messages(x, y, w, h) {
+    const m = F(); const r = panel(x, y, w, h, "Channel Messages", m.messages.length);
+    const rows = m.messages.slice().reverse(), lh = 30, vis = Math.floor(r.h / lh);
+    S.msgScroll = constrain(S.msgScroll, 0, Math.max(0, rows.length - vis));
+    push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
+    const now = performance.now();
+    if (!rows.length) t("no text messages decoded yet", r.x, r.y + 4, C.dim, 10);
+    for (let i = 0; i < vis + 1; i++) {
+      const e = rows[i + Math.floor(S.msgScroll)]; if (!e) break; const ry = r.y + i * lh;
+      const dst = e.to && e.to !== m.BROADCAST ? ((m.nodes.get(e.to) || {}).sname || "?") : "all";
+      const dt = new Date(Date.now() - (now - e.t));
+      t(("0" + dt.getHours()).slice(-2) + ":" + ("0" + dt.getMinutes()).slice(-2), r.x, ry + 1, C.dim, 9);
+      t((e.sname || "?") + " → " + dst, r.x + 38, ry, e.pki ? C.green : C.cyan, 10.5);
+      if (e.pki) t("🔒", r.x + r.w - 12, ry, C.green, 9, RIGHT);
+      t(trunc(e.text, Math.floor((r.w - 12) / 6.6)), r.x + 6, ry + 14, C.ink, 11.5);
+      stroke(C.grid); strokeWeight(1); line(r.x, ry + lh - 3, r.x + r.w, ry + lh - 3);
+    }
+    drawingContext.restore(); pop();
+    scrollbar(r.x + r.w + 3, r.y, r.h, S.msgScroll, rows.length, vis); S.msgRect = r;
   }
 
   function draw(status) {
@@ -282,13 +317,16 @@ window.Tactical = (function () {
     traffic(rx, bodyY, rightW, th);
     channels(rx, bodyY + th + p, rightW, th);
     telemetry(rx, bodyY + (th + p) * 2, rightW, th);
-    feed(p, H - footH - p, W - p * 2, footH);
+    const availW = W - p * 3, feedW = availW * 0.58;
+    feed(p, H - footH - p, feedW, footH);
+    messages(p + feedW + p, H - footH - p, availW - feedW, footH);
   }
 
   function onWheel(dy, mx, my) {
     const inR = (r) => r && mx > r.x - 6 && mx < r.x + r.w + 8 && my > r.y && my < r.y + r.h;
     if (inR(S.rosterRect)) S.rosterScroll += dy > 0 ? 1 : -1;
     else if (inR(S.feedRect)) S.feedScroll += dy > 0 ? 1 : -1;
+    else if (inR(S.msgRect)) S.msgScroll += dy > 0 ? 1 : -1;
   }
   return { draw, onWheel };
 })();

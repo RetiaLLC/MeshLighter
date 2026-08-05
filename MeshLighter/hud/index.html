@@ -20,10 +20,36 @@
   <div class="hud bottom-bar">
     <button id="btn-demo" class="btn">Demo Mode</button>
     <button id="btn-connect" class="btn primary">Connect radio-pipe</button>
+    <button id="btn-trace" class="btn" title="Query nodes with a traceroute (transmits)">Traceroute</button>
+    <button id="btn-settings" class="btn" title="Channel and frequency">Settings</button>
     <button id="btn-clear" class="btn" title="Wipe accumulated data">Clear</button>
-    <a id="lnk-lab" class="btn" href="lab/">Lab &amp; tools ↗</a>
-    <button id="btn-hide" class="btn ghost" title="Toggle chrome (or press M)">Hide UI</button>
-    <span class="passive" title="This visualizer only reads. It never transmits.">passive · read-only</span>
+    <a id="lnk-lab" class="btn" href="lab/">Lab ↗</a>
+    <button id="btn-hide" class="btn ghost" title="Toggle chrome (or press M)">Hide</button>
+    <span class="passive" title="Decode and visualization are read-only. Traceroute is a separate, gated transmit.">read-only decode</span>
+  </div>
+
+  <div class="hud settings-panel" id="settings-panel" hidden>
+    <div class="sp-title">Settings</div>
+    <label>Channel name<input id="set-chan" value="LongFast" spellcheck="false"></label>
+    <label>PSK <span class="sp-hint">base64, or "default"</span><input id="set-psk" value="default" spellcheck="false"></label>
+    <button id="set-chan-apply" class="btn primary">Apply channel (decode)</button>
+    <div class="sp-rule"></div>
+    <label>Receiver frequency (MHz)<input id="set-freq" value="906.875" spellcheck="false"></label>
+    <button id="set-freq-apply" class="btn">Tune receiver</button>
+    <div class="sp-note" id="set-note">Channel/PSK changes the local decoder so private channels resolve. Tuning writes to a connected radio-pipe and only changes what it listens to.</div>
+  </div>
+
+  <div class="hud trace-gate" id="trace-gate" hidden>
+    <div class="tg-card">
+      <div class="tg-title">Traceroute transmits into the mesh</div>
+      <p>A traceroute sends a query to nodes and maps the path their reply takes. It transmits.
+         Run it only on hardware and an RF environment you own or are authorized to test.</p>
+      <label class="tg-affirm"><input type="checkbox" id="tg-check"> I own, or am authorized to test, this hardware and RF.</label>
+      <div class="tg-actions">
+        <button id="tg-cancel" class="btn ghost">Cancel</button>
+        <button id="tg-go" class="btn primary" disabled>Run traceroute</button>
+      </div>
+    </div>
   </div>
 </div>
 

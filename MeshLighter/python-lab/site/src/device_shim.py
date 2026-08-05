@@ -47,15 +47,18 @@ class Device:
     async def scan(self, start_mhz=902, end_mhz=928, step_khz=500, dwell_ms=20, timeout=25):
         await self._cfg(6, [(3, mesh.PB_VARINT, int(start_mhz * 1000)), (4, mesh.PB_VARINT, int(end_mhz * 1000)),
                             (5, mesh.PB_VARINT, int(step_khz)), (6, mesh.PB_VARINT, int(dwell_ms))])
-        out = []; t0 = time.time()
+        out = []; t0 = time.time(); got = False
         while time.time() - t0 < timeout:
             for f in await self.read_frames(0.2, 0.05):
                 m = mesh.protobuf(f).to_map()
                 if m.get(1) == 4:
+                    got = True
                     r = m.get(3, 0); r = r - (1 << 32) if r >= (1 << 31) else r
                     out.append((m.get(2, 0), r))
                 elif m.get(1) == 5:
                     return sorted(out, key=lambda x: -x[1])
+            if not got and time.time() - t0 > 4.0:
+                return []          # no radio-pipe response; scan.py explains why
             await self.sleep(0.02)
         return sorted(out, key=lambda x: -x[1])
 

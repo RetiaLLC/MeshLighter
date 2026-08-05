@@ -43,5 +43,33 @@ function wireUI() {
   $("btn-connect").addEventListener("click", () => (window.VizSource.mode() === "serial" ? window.VizSource.disconnect() : window.VizSource.connect()));
   $("btn-clear").addEventListener("click", () => window.MeshModel.clear());
   $("btn-hide").addEventListener("click", () => $("ui-overlay").classList.toggle("hidden"));
+
+  const toast = (msg) => {
+    let el = $("hud-toast");
+    if (!el) { el = document.createElement("div"); el.id = "hud-toast"; el.className = "hud-toast"; document.body.appendChild(el); }
+    el.textContent = msg; el.classList.add("show"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 2800);
+  };
+
+  // Settings: channel decode + receiver frequency
+  const sp = $("settings-panel");
+  $("btn-settings").addEventListener("click", () => { sp.hidden = !sp.hidden; });
+  $("set-chan-apply").addEventListener("click", () => {
+    const r = window.VizSource.setChannel($("set-chan").value.trim(), $("set-psk").value.trim() || "default");
+    $("set-note").textContent = `Decoding channel "${r.name}" (hash 0x${r.hash.toString(16).padStart(2, "0")}).`;
+  });
+  $("set-freq-apply").addEventListener("click", async () => {
+    const r = await window.VizSource.setFrequency(parseFloat($("set-freq").value));
+    $("set-note").textContent = r.msg;
+  });
+
+  // Traceroute: gated because it transmits
+  const tg = $("trace-gate"), tgc = $("tg-check"), tgo = $("tg-go");
+  const closeGate = () => { tg.hidden = true; tgc.checked = false; tgo.disabled = true; };
+  $("btn-trace").addEventListener("click", () => { tg.hidden = false; });
+  tgc.addEventListener("change", () => { tgo.disabled = !tgc.checked; });
+  $("tg-cancel").addEventListener("click", closeGate);
+  tg.addEventListener("click", (e) => { if (e.target === tg) closeGate(); });
+  tgo.addEventListener("click", async () => { closeGate(); toast("running traceroute…"); const r = await window.VizSource.traceroute(); toast(r.msg); });
+
   if (!("serial" in navigator)) { const cb = $("btn-connect"); cb.disabled = true; cb.title = "Web Serial needs Chrome/Edge/Opera over HTTPS"; }
 }

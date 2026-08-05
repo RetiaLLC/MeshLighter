@@ -96,10 +96,59 @@
   }
   function stopDemo() { if (demoTimer) clearInterval(demoTimer); demoTimer = null; if (mode === "demo") { mode = "idle"; setStatus("IDLE", "#6f97a8"); } }
 
+  // ---------------- config: channel decode + RX frequency ----------------
+  const te = new TextEncoder();
+  const vi = (n) => { const o = []; while (n > 0x7f) { o.push(0x80 | (n & 0x7f)); n >>>= 7; } o.push(n); return o; };
+  const pv = (i, n) => [i << 3 | 0, ...vi(n)];
+  const ps = (i, b) => { b = Array.from(b); return [i << 3 | 2, ...vi(b.length), ...b]; };
+  const frameBytes = (pl) => { pl = Array.from(pl); return Uint8Array.from([0x94, 0xc3, (pl.length >> 8) & 0xff, pl.length & 0xff, ...pl]); };
+  async function writePort(bytes) {
+    if (!port || !port.writable) return; const w = port.writable.getWriter();
+    try { await w.write(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes)); } finally { w.releaseLock(); }
+  }
+  function setChannel(name, psk) { const r = D().setChannel(name || "LongFast", psk || "default"); return r; }
+  async function setFrequency(mhz) {
+    if (mode !== "serial") return { ok: false, msg: "connect a radio-pipe to tune its receiver" };
+    const v = new Uint8Array(4); new DataView(v.buffer).setFloat32(0, +mhz, true);
+    await writePort(frameBytes([...pv(1, 2), ...pv(2, 1), ...ps(3, te.encode("freq")), ...ps(4, v)]));
+    await new Promise((r) => setTimeout(r, 120));
+    await writePort(frameBytes([...pv(1, 2), ...pv(2, 4)]));   // apply-live (receive-only tuning)
+    return { ok: true, msg: `receiver tuned to ${(+mhz).toFixed(3)} MHz` };
+  }
+
+  // ---------------- traceroute (TRANSMITS a query; gated in app.js) ----------------
+  const PIPE_NUM = 0x5eef1e5e;
+  async function injectTraceroute(targetHex) {
+    const target = parseInt(targetHex, 16) >>> 0, id = Math.floor(Math.random() * 0xffffffff) >>> 0;
+    const data = Uint8Array.from([...pv(1, 70), ...pv(3, 1)]);      // Data: portnum TRACEROUTE, want_response
+    const active = D().activeChannel(); if (!active) return;
+    const encd = await D().encryptChannel(active.name, id, PIPE_NUM, data); if (!encd) return;
+    const hdr = new Uint8Array(16), dv = new DataView(hdr.buffer);
+    dv.setUint32(0, target, true); dv.setUint32(4, PIPE_NUM, true); dv.setUint32(8, id, true);
+    hdr[12] = 0x03 | (3 << 5); hdr[13] = active.hash;              // hop_limit 3, hop_start 3
+    const raw = new Uint8Array(16 + encd.length); raw.set(hdr, 0); raw.set(encd, 16);
+    await writePort(frameBytes([...pv(1, 1), ...ps(2, raw)]));      // radio-pipe TX inject
+  }
+  function demoTraceroute() {
+    if (NODES.length < 3) return;
+    const from = pick(NODES), via = pick(NODES.filter((x) => x !== from)), to = pick(NODES.filter((x) => x !== from && x !== via));
+    M().ingest({ from: hexid(from.num), to: hexid(to.num), ...meta(), portnum: 70, type: "traceroute", route: [hexid(from.num), hexid(via.num), hexid(to.num)] });
+  }
+  async function traceroute() {
+    if (mode === "demo") { demoTraceroute(); setTimeout(demoTraceroute, 600); setTimeout(demoTraceroute, 1200); return { ok: true, msg: "traceroute simulated across the mesh" }; }
+    if (mode === "serial") {
+      const recent = M().nodesByRecent().slice(0, 6);
+      if (!recent.length) return { ok: false, msg: "no nodes seen yet to query" };
+      for (const n of recent) { await injectTraceroute(n.id); await new Promise((r) => setTimeout(r, 700)); }
+      return { ok: true, msg: `traceroute query sent to ${recent.length} node(s)` };
+    }
+    return { ok: false, msg: "start Demo Mode or connect a radio-pipe" };
+  }
+
   window.VizSource = {
-    connect, disconnect, startDemo, stopDemo,
+    connect, disconnect, startDemo, stopDemo, setChannel, setFrequency, traceroute,
     toggleDemo() { mode === "demo" ? stopDemo() : startDemo(); },
-    status() { return status; }, mode() { return mode; },
+    status() { return status; }, mode() { return mode; }, channelName() { return D().channelName(); },
     autoStart() { const q = new URLSearchParams(location.search); if (q.has("demo") || !("serial" in navigator)) startDemo(); },
   };
 })();
