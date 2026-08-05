@@ -308,6 +308,62 @@ window.Tactical = (function () {
     if (S.msgScroll > 0) t("↓ jump to newest (scroll down)", r.x + r.w, r.y + r.h - 11, C.amber, 8.5, RIGHT);
   }
 
+  // ---- map panel (replaces the signal scope) ---------------------------------
+  const niceKm = (v) => { const p = Math.pow(10, Math.floor(Math.log10(v))), mm = v / p; return (mm < 1.5 ? 1 : mm < 3.5 ? 2 : mm < 7 ? 5 : 10) * p; };
+  function mapPanel(x, y, w, h) {
+    const m = F(); const r = panel(x, y, w, h, "Map · GPS positions", null);
+    const now = performance.now();
+    const nodes = [...m.nodes.values()].filter((n) => n.lat != null && n.lon != null && now - n.lastHeard < 300000);
+    if (!nodes.length) {
+      t("no GPS fixes yet", r.x + r.w / 2, r.y + r.h / 2 - 12, C.muted, 12, CENTER);
+      t("nodes appear here once they broadcast a Position (portnum 3)", r.x + r.w / 2, r.y + r.h / 2 + 6, C.dim, 9.5, CENTER);
+      return;
+    }
+    let a0 = Infinity, a1 = -Infinity, o0 = Infinity, o1 = -Infinity;
+    for (const n of nodes) { a0 = Math.min(a0, n.lat); a1 = Math.max(a1, n.lat); o0 = Math.min(o0, n.lon); o1 = Math.max(o1, n.lon); }
+    const pa = (a1 - a0) * 0.2 + 0.001, po = (o1 - o0) * 0.2 + 0.001; a0 -= pa; a1 += pa; o0 -= po; o1 += po;
+    const mLat = (a0 + a1) / 2, mLon = (o0 + o1) / 2, lonS = Math.cos(mLat * Math.PI / 180);
+    const sLat = Math.max(1e-6, a1 - a0), sLon = Math.max(1e-6, (o1 - o0) * lonS);
+    const scale = Math.min(r.w / sLon, r.h / sLat), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    const proj = (la, lo) => ({ x: cx + (lo - mLon) * lonS * scale, y: cy - (la - mLat) * scale });
+    push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
+    const LK = { dm: C.green, route: "#ff9e42", neighbor: "#5b8bff", dir: C.line2 };
+    for (const l of m.links) { const A = m.nodes.get(l.a), B = m.nodes.get(l.b); if (!A || !B || A.lat == null || B.lat == null) continue;
+      const P = proj(A.lat, A.lon), Q = proj(B.lat, B.lon); stroke(LK[l.kind] || C.line2); strokeWeight(l.kind === "dm" ? 1.5 : 1); line(P.x, P.y, Q.x, Q.y); }
+    const seen = new Map();
+    for (const n of nodes) { const key = n.lat.toFixed(5) + "," + n.lon.toFixed(5); const k = seen.get(key) || 0; seen.set(key, k + 1);
+      const p = proj(n.lat, n.lon); if (k) { p.x += Math.cos(k) * 8; p.y += Math.sin(k) * 8; }
+      noStroke(); if (now - n.lastHeard < 1500) { fill(C.ink); ellipse(p.x, p.y, 12, 12); }
+      fill(roleColor(n)); ellipse(p.x, p.y, 7, 7); t(n.sname, p.x + 6, p.y - 5, C.muted, 8.5);
+      S.hits.push({ id: n.id, x: p.x, y: p.y, r: 9 });
+    }
+    drawingContext.restore(); pop();
+    const kmPerPx = 111.32 / scale, barKm = niceKm(kmPerPx * 90), barPx = barKm / kmPerPx;
+    stroke(C.muted); strokeWeight(2); line(r.x + 8, r.y + r.h - 10, r.x + 8 + barPx, r.y + r.h - 10);
+    t(barKm >= 1 ? barKm + " km" : (barKm * 1000) + " m", r.x + 12 + barPx, r.y + r.h - 16, C.muted, 8.5);
+    t(nodes.length + " positioned · " + (m.nodes.size - nodes.length) + " no fix", r.x + r.w, r.y + r.h - 14, C.dim, 8.5, RIGHT);
+  }
+
+  // ---- RSSI ranking (relative signal strength, strongest first) ---------------
+  const rssiColor = (v) => v == null ? C.dim : v > -80 ? C.green : v > -105 ? C.amber : C.red;
+  function rssiRank(x, y, w, h) {
+    const m = F(); const r = panel(x, y, w, h, "Signal · RSSI rank", null);
+    const now = performance.now();
+    const nodes = [...m.nodes.values()].filter((n) => n.rssi != null && now - n.lastHeard < 180000).sort((A, B) => B.rssi - A.rssi);
+    if (!nodes.length) { t("no signal data yet", r.x, r.y + 4, C.dim, 10); return; }
+    const lh = 18, vis = Math.floor(r.h / lh); let ry = r.y;
+    for (const n of nodes.slice(0, vis)) {
+      const tt = constrain((n.rssi + 130) / 100, 0, 1);   // -130 weak … -30 strong
+      noStroke(); fill(roleColor(n)); ellipse(r.x + 4, ry + 6, 6, 6);
+      t(n.sname, r.x + 13, ry + 1, C.ink, 10);
+      const bx = r.x + 66, bw = r.w - 66 - 48;
+      fill(C.grid); rect(bx, ry + 3, bw, 7, 2); fill(rssiColor(n.rssi)); rect(bx, ry + 3, bw * tt, 7, 2);
+      t(n.rssi + " dBm", r.x + r.w, ry + 1, rssiColor(n.rssi), 9.5, RIGHT);
+      ry += lh;
+    }
+    if (nodes.length > vis) t("+" + (nodes.length - vis) + " more", r.x + r.w, r.y + r.h - 11, C.dim, 8.5, RIGHT);
+  }
+
   function draw(status) {
     background(C.bg);
     F().prune();
@@ -319,11 +375,11 @@ window.Tactical = (function () {
     const centerX = p + leftW + p, centerW = W - leftW - rightW - p * 4;
     header(p, p, W - p * 2, headH, status);
     roster(p, bodyY, leftW, bodyH);
-    scope(centerX, bodyY, centerW, bodyH * 0.56 - p / 2);
+    mapPanel(centerX, bodyY, centerW, bodyH * 0.56 - p / 2);
     graph(centerX, bodyY + bodyH * 0.56 + p / 2, centerW, bodyH * 0.44 - p / 2);
     const rx = W - p - rightW, th = (bodyH - p * 2) / 3;
     traffic(rx, bodyY, rightW, th);
-    channels(rx, bodyY + th + p, rightW, th);
+    rssiRank(rx, bodyY + th + p, rightW, th);
     telemetry(rx, bodyY + (th + p) * 2, rightW, th);
     const availW = W - p * 3, feedW = availW * 0.58;
     feed(p, H - footH - p, feedW, footH);
