@@ -52,6 +52,7 @@ class Device:
         if power is not None: w.append((b'power', bytes([int(power) & 0xff])))
         for key, val in w:
             await self._cfg(1, [(3, mesh.PB_STRING, key), (4, mesh.PB_STRING, val)])
+            await self.sleep(0.25)              # pace writes: back-to-back config writes wedge the radio
         await self._cfg(2); await self.sleep(0.3); await self._cfg(4)   # save + apply live
         return 'tuned: ' + ', '.join(k.decode() for k, _ in w)
 
