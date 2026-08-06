@@ -1,23 +1,24 @@
-# meshcore.py — EXPERIMENTAL MeshCore support for the lab. MeshCore (github.com/ripplebiz/
-# MeshCore) is a separate LoRa mesh from Meshtastic: different PHY presets, different packet
-# format, no channel-hash header. The radio-pipe is protocol-agnostic on receive, so if you
-# tune it to a MeshCore preset (dev.tune) it hands up raw MeshCore packets you can parse here.
+# meshcore.py — MeshCore support for the lab. MeshCore (github.com/ripplebiz/MeshCore) is a
+# separate LoRa mesh from Meshtastic: different PHY presets, different packet format, no
+# channel-hash header. The radio-pipe is protocol-agnostic on receive, so if you tune it to a
+# MeshCore preset (dev.tune) it hands up raw MeshCore packets you can parse here.
 #
 # ADVERTs are self-signed (Ed25519) and NOT encrypted, so node discovery works passively with
-# no keys. Direct/group messages are encrypted and are not decoded here.
+# no keys. Direct/group (GRP_TXT) messages are encrypted and are only counted, not decoded.
 #
-# Status: the packet + advert layout below follows the MeshCore wire format; validate the
-# exact bytes against a real node before trusting field-for-field (see meshcore_listen.py).
+# Validated on a real US node: the pipe on the US915 preset below decoded live ADVERTs
+# (pubkey / node-type / name) and saw group-text traffic. Encrypted-message decode is future work.
 
 # ---- standard radio presets (freq MHz, bw kHz, sf, cr=4/x, sync) ----------------
-# These are MeshCore's common defaults. Match them to your node's Radio settings — if the
-# preset is off, the pipe will hear nothing. sync 0x12 is MeshCore's LoRa sync word.
+# MeshCore's default modem is narrow: BW 62.5 kHz, SF 7, CR 5 (confirmed against a US node's
+# "USA/Canada (Recommended)" radio settings). Region presets keep that modem and only change
+# frequency. Match them to your node's Radio settings — if the preset is off, the pipe hears
+# nothing. sync 0x12 is MeshCore's LoRa sync word.
 PRESETS = {
-    "US915":       {"freq": 910.525, "bw": 250, "sf": 10, "cr": 5, "sync": 0x12},
-    "EU868":       {"freq": 869.525, "bw": 250, "sf": 10, "cr": 5, "sync": 0x12},
-    "EU433":       {"freq": 433.5,   "bw": 250, "sf": 10, "cr": 5, "sync": 0x12},
-    "US915_fast":  {"freq": 910.525, "bw": 500, "sf": 9,  "cr": 5, "sync": 0x12},
-    "US915_long":  {"freq": 910.525, "bw": 250, "sf": 11, "cr": 5, "sync": 0x12},
+    "US915":  {"freq": 910.525, "bw": 62.5, "sf": 7, "cr": 5, "sync": 0x12},   # USA/Canada, confirmed
+    "EU868":  {"freq": 869.525, "bw": 62.5, "sf": 7, "cr": 5, "sync": 0x12},   # freq per region docs
+    "EU433":  {"freq": 433.5,   "bw": 62.5, "sf": 7, "cr": 5, "sync": 0x12},
+    "AU915":  {"freq": 915.0,   "bw": 62.5, "sf": 7, "cr": 5, "sync": 0x12},
 }
 
 # ---- packet header ----------------------------------------------------------------

@@ -1,10 +1,12 @@
-# MeshCore listen — PASSIVE, EXPERIMENTAL (no authorization needed).
+# MeshCore listen — PASSIVE (no authorization needed).
 # MeshCore is a separate LoRa mesh from Meshtastic. This retunes the radio-pipe to a MeshCore
 # preset and listens for node ADVERTs (self-signed, unencrypted), so you can discover nodes
-# without any keys. Encrypted messages are counted but not decoded.
+# without any keys. Encrypted group/direct messages are counted but not decoded.
 #
-# Set PRESET to match your node's Radio settings. If nothing shows up, the preset is wrong:
-# check freq / bandwidth / spreading-factor / coding-rate on the node and edit PRESETS below.
+# Validated against a real US node: on the US915 preset it decoded live adverts (name, type,
+# pubkey) and saw group chat. Set PRESET to match your node's Radio settings. If nothing shows
+# up, the preset is wrong: check freq / bandwidth / SF / CR on the node and edit PRESETS below.
+# (The US default is the narrow 910.525 / BW 62.5 / SF 7 / CR 5 modem.)
 from device import dev
 import mesh, meshcore, time
 
