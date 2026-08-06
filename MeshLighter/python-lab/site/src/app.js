@@ -11,7 +11,7 @@ const HOME = "/home/pyodide";
 
 // Async Device methods used at script level (auto-await keeps scripts sync-looking).
 const DEVICE_METHODS = ["connect", "disconnect", "sleep", "send_frame", "read_frames",
-  "set_freq", "set_power", "sniff", "scan", "send_nodeinfo", "send_position",
+  "set_freq", "set_power", "tune", "sniff", "scan", "send_nodeinfo", "send_position",
   "send_text", "send_portnum", "monitor"];
 
 const STARTER_SCRIPT = `# MeshLighter Python lab. Connect a radio-pipe Nibble, then Run.
@@ -141,12 +141,15 @@ async function loadPython() {
   });
   pyodide.registerJsModule("device_js", createBridge());
   const meshSrc = await (await fetch("./mesh.py")).text();
+  const mcSrc = await (await fetch("./meshcore.py")).text();
   const shimSrc = await (await fetch("./src/device_shim.py")).text();
   pyodide.globals.set("__mesh_src", meshSrc);
+  pyodide.globals.set("__mc_src", mcSrc);
   pyodide.globals.set("__shim_src", shimSrc);
   pyodide.runPython(`
 import sys, types
 _mesh = types.ModuleType("mesh"); exec(__mesh_src, _mesh.__dict__); sys.modules["mesh"] = _mesh
+_mc = types.ModuleType("meshcore"); exec(__mc_src, _mc.__dict__); sys.modules["meshcore"] = _mc
 _dev = types.ModuleType("device"); exec(__shim_src, _dev.__dict__); sys.modules["device"] = _dev
 `);
   writeConsole(`Python ready (Pyodide ${pyodide.version}).${demoMode ? " Mock radio-pipe active (?demo)." : ""}\n`, "system");

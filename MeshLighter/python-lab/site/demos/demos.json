@@ -8,5 +8,6 @@
   {"file": "svg_shape.py",       "title": "SVG shape on the map (inject)"},
   {"file": "silent_alarm.py",    "title": "Silent alarm PortNum 77 (inject)"},
   {"file": "position_spoof.py",  "title": "Position spoof (inject)"},
-  {"file": "private_channel.py", "title": "Private channel (config)"}
+  {"file": "private_channel.py", "title": "Private channel (config)"},
+  {"file": "meshcore_listen.py", "title": "MeshCore listen (passive, experimental)"}
 ]

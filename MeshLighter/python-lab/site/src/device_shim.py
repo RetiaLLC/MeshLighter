@@ -40,6 +40,21 @@ class Device:
         await self._cfg(2); await self.sleep(0.3); await self._cfg(4)
         return 'power -> %s dBm (live)' % dbm
 
+    async def tune(self, freq=None, bw=None, sf=None, cr=None, sync=None, power=None):
+        # Retune the receiver's LoRa PHY, live and passive. Lets the pipe listen to non-Meshtastic
+        # presets (e.g. MeshCore). freq in MHz, bw in kHz (both float); sf/cr/sync/power are bytes.
+        w = []
+        if freq is not None: w.append((b'freq', struct.pack('<f', float(freq))))
+        if bw   is not None: w.append((b'bw',   struct.pack('<f', float(bw))))
+        if sf   is not None: w.append((b'sf',   bytes([int(sf) & 0xff])))
+        if cr   is not None: w.append((b'cr',   bytes([int(cr) & 0xff])))
+        if sync is not None: w.append((b'syncword', bytes([int(sync) & 0xff])))
+        if power is not None: w.append((b'power', bytes([int(power) & 0xff])))
+        for key, val in w:
+            await self._cfg(1, [(3, mesh.PB_STRING, key), (4, mesh.PB_STRING, val)])
+        await self._cfg(2); await self.sleep(0.3); await self._cfg(4)   # save + apply live
+        return 'tuned: ' + ', '.join(k.decode() for k, _ in w)
+
     async def sniff(self, sync=0x12, crc=False):
         await self._cfg(5, [(3, mesh.PB_VARINT, int(sync) & 0xff), (4, mesh.PB_VARINT, 1 if crc else 0)])
         return 'promiscuous sniff: sync=0x%02x crc=%s' % (int(sync) & 0xff, bool(crc))
