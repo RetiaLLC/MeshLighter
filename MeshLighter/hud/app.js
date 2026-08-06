@@ -61,19 +61,25 @@ function wireUI() {
     $("set-note").textContent = r.msg;
   });
 
-  // Traceroute: gated because it transmits
+  // Traceroute: gated the first time (it transmits). Once affirmed, the gate stays dismissed.
   const tg = $("trace-gate"), tgc = $("tg-check"), tgo = $("tg-go");
+  const AUTH_KEY = "meshlighter.traceAuthorized";
+  let authMem = false;
+  const isAuthorized = () => { try { return localStorage.getItem(AUTH_KEY) === "1"; } catch { return authMem; } };
   const closeGate = () => { tg.hidden = true; tgc.checked = false; tgo.disabled = true; };
-  $("btn-trace").addEventListener("click", () => { tg.hidden = false; });
-  tgc.addEventListener("change", () => { tgo.disabled = !tgc.checked; });
-  $("tg-cancel").addEventListener("click", closeGate);
-  tg.addEventListener("click", (e) => { if (e.target === tg) closeGate(); });
-  tgo.addEventListener("click", async () => {
-    closeGate(); const btn = $("btn-trace"); btn.disabled = true; toast("running traceroute…");
+  const runTrace = async () => {
+    const btn = $("btn-trace"); btn.disabled = true; toast("running traceroute…");
     try { const r = await window.VizSource.traceroute(); toast(r && r.msg ? r.msg : "traceroute done"); }
     catch (e) { toast("traceroute failed"); }
     finally { btn.disabled = false; }
-  });
+  };
+  const reflectAuth = () => { $("btn-trace").title = isAuthorized() ? "Traceroute (authorized — transmits)" : "Query nodes with a traceroute (transmits)"; };
+  $("btn-trace").addEventListener("click", () => { if (isAuthorized()) runTrace(); else tg.hidden = false; });
+  tgc.addEventListener("change", () => { tgo.disabled = !tgc.checked; });
+  $("tg-cancel").addEventListener("click", closeGate);
+  tg.addEventListener("click", (e) => { if (e.target === tg) closeGate(); });
+  tgo.addEventListener("click", () => { try { localStorage.setItem(AUTH_KEY, "1"); } catch { authMem = true; } reflectAuth(); closeGate(); runTrace(); });
+  reflectAuth();
 
   if (!("serial" in navigator)) { const cb = $("btn-connect"); cb.disabled = true; cb.title = "Web Serial needs Chrome/Edge/Opera over HTTPS"; }
 }

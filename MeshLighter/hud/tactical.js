@@ -160,42 +160,70 @@ window.Tactical = (function () {
     }
   }
 
-  // ---- mesh link graph (force-directed) --------------------------------------
+  // ---- mesh link graph (force-directed, rooted at the receiver) ---------------
+  // Passive capture rarely yields directed edges (most traffic is broadcast), so instead
+  // of leaving nodes floating we anchor an RX hub and hang each heard node off it by hop
+  // distance: 0-hop = direct RF neighbour (solid spoke, close in), multi-hop = relayed
+  // (dashed spoke, further out). Observed traceroute/neighbour/DM links draw on top.
   function graph(x, y, w, h) {
-    const m = F(); const r = panel(x, y, w, h, "Mesh Link Graph", m.links.length);
-    const now = performance.now();
-    const live = [...m.nodes.values()].filter((n) => now - n.lastHeard < 120000).slice(0, 44);
+    const m = F(); const now = performance.now();
+    const live = [...m.nodes.values()].filter((n) => now - n.lastHeard < 180000).slice(0, 44);
+    const r = panel(x, y, w, h, "Mesh Link Graph", live.length);
+    const cx0 = r.x + r.w / 2, cy0 = r.y + r.h / 2, R = Math.min(r.w, r.h);
     const ids = new Set(live.map((n) => n.id));
+    if (!S.fx.has("__RX__")) S.fx.set("__RX__", { x: cx0, y: cy0, vx: 0, vy: 0 });
+    const rxp = S.fx.get("__RX__"); rxp.x = cx0; rxp.y = cy0; rxp.vx = rxp.vy = 0;   // RX pinned at centre
     for (const n of live) if (!S.fx.has(n.id)) S.fx.set(n.id, { x: r.x + n.sx * r.w, y: r.y + n.sy * r.h, vx: 0, vy: 0 });
-    // forces
+    // repulsion between nodes + faint gravity
     for (const a of live) {
       const pa = S.fx.get(a.id); let fxv = 0, fyv = 0;
-      for (const b of live) { if (a === b) continue; const pb = S.fx.get(b.id); let dx = pa.x - pb.x, dy = pa.y - pb.y; let d2 = dx * dx + dy * dy + 0.01; const f = 380 / d2; fxv += dx * f; fyv += dy * f; }
-      fxv += (r.x + r.w / 2 - pa.x) * 0.006; fyv += (r.y + r.h / 2 - pa.y) * 0.006; // gravity
+      for (const b of live) { if (a === b) continue; const pb = S.fx.get(b.id); const dx = pa.x - pb.x, dy = pa.y - pb.y, d2 = dx * dx + dy * dy + 0.01, f = 900 / d2; fxv += dx * f; fyv += dy * f; }
+      fxv += (cx0 - pa.x) * 0.002; fyv += (cy0 - pa.y) * 0.002;
       pa.vx = (pa.vx + fxv) * 0.82; pa.vy = (pa.vy + fyv) * 0.82;
     }
+    // RX spoke: every node springs to RX at a rest radius set by its hop distance
+    const restFor = (hops) => (0.14 + Math.min(hops == null ? 3 : hops, 6) * 0.05) * R;
+    for (const a of live) {
+      const pa = S.fx.get(a.id), dx = pa.x - rxp.x, dy = pa.y - rxp.y, d = Math.hypot(dx, dy) || 1, k = (d - restFor(a.hops)) * 0.02;
+      pa.vx -= dx / d * k; pa.vy -= dy / d * k;
+    }
+    // observed links pull their endpoints together (real topology)
     for (const l of m.links) {
       if (l.until < now || !ids.has(l.a) || !ids.has(l.b)) continue;
       const pa = S.fx.get(l.a), pb = S.fx.get(l.b); if (!pa || !pb) continue;
-      const dx = pb.x - pa.x, dy = pb.y - pa.y, d = Math.hypot(dx, dy) || 1, k = (d - 78) * 0.012;
+      const dx = pb.x - pa.x, dy = pb.y - pa.y, d = Math.hypot(dx, dy) || 1, k = (d - 70) * 0.012;
       pa.vx += dx / d * k; pa.vy += dy / d * k; pb.vx -= dx / d * k; pb.vy -= dy / d * k;
     }
+    for (const n of live) { const p = S.fx.get(n.id); p.x = constrain(p.x + p.vx, r.x + 8, r.x + r.w - 8); p.y = constrain(p.y + p.vy, r.y + 8, r.y + r.h - 8); }
+
     push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
+    // RX spokes underneath: solid green = heard direct, dashed amber = heard via relay
+    for (const n of live) {
+      const p = S.fx.get(n.id), direct = (n.hops || 0) === 0;
+      if (direct) { stroke(53, 255, 158, 120); strokeWeight(1.4); }
+      else { stroke(245, 182, 66, 85); strokeWeight(1); drawingContext.setLineDash([3, 4]); }
+      line(rxp.x, rxp.y, p.x, p.y); drawingContext.setLineDash([]);
+    }
+    // observed topology links on top
     const LK = { dm: C.green, route: "#ff9e42", neighbor: "#5b8bff", dir: C.line2 };
     for (const l of m.links) {
       if (l.until < now || !ids.has(l.a) || !ids.has(l.b)) continue;
       const pa = S.fx.get(l.a), pb = S.fx.get(l.b); if (!pa || !pb) continue;
-      stroke(LK[l.kind] || C.line2); strokeWeight(l.kind === "dm" ? 1.6 : 1); line(pa.x, pa.y, pb.x, pb.y);
+      stroke(LK[l.kind] || C.line2); strokeWeight(l.kind === "dm" ? 1.8 : 1.4); line(pa.x, pa.y, pb.x, pb.y);
     }
+    // nodes
     for (const n of live) {
-      const p = S.fx.get(n.id); p.x = constrain(p.x + p.vx, r.x + 6, r.x + r.w - 6); p.y = constrain(p.y + p.vy, r.y + 6, r.y + r.h - 6);
-      const rolen = m.ROLE[n.role] || ""; const hub = rolen.includes("ROUTER") || rolen === "REPEATER";
-      noStroke(); fill(ROLECOL[rolen] || C.cyan); const s = hub ? 9 : 6 + Math.min(4, n.count / 8);
-      if (now - n.lastHeard < 1200) { fill(C.ink); ellipse(p.x, p.y, s + 5, s + 5); }
+      const p = S.fx.get(n.id), direct = (n.hops || 0) === 0;
+      const rolen = m.ROLE[n.role] || "", hub = rolen.includes("ROUTER") || rolen === "REPEATER", s = hub ? 9 : 6 + Math.min(4, n.count / 8);
+      noStroke(); if (now - n.lastHeard < 1200) { fill(C.ink); ellipse(p.x, p.y, s + 5, s + 5); }
       fill(roleColor(n)); ellipse(p.x, p.y, s, s);
-      t(n.sname, p.x + s / 2 + 3, p.y - 5, C.muted, 8.5);
+      t(n.sname, p.x + s / 2 + 3, p.y - 5, C.ink, 8.5);
+      if (n.hops != null) t(direct ? "direct" : n.hops + "h", p.x + s / 2 + 3, p.y + 4, direct ? C.green : C.dim, 7.5);
       S.hits.push({ id: n.id, x: p.x, y: p.y, r: s + 5 });
     }
+    // RX hub marker
+    noStroke(); fill(C.cyan); ellipse(rxp.x, rxp.y, 9, 9); stroke(C.cyan); strokeWeight(1); noFill(); ellipse(rxp.x, rxp.y, 16, 16);
+    noStroke(); t("RX", rxp.x + 11, rxp.y - 4, C.cyan, 9);
     drawingContext.restore(); pop();
     // FLAVOR colour key — roles currently present
     const present = [...new Set(live.map(roleName))].slice(0, 8);
