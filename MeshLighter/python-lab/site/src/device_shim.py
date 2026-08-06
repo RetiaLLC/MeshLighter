@@ -63,8 +63,12 @@ class Device:
         return sorted(out, key=lambda x: -x[1])
 
     # ---- injection (gated) ----
-    async def _tx(self, src, portnum, payload):
-        tx = mesh.build_tx(src, portnum, payload, self._next_seq(), CH)
+    def _ch(self, channel):                     # None -> LongFast; str -> named channel; else a mesh.channel
+        if channel is None: return CH
+        if isinstance(channel, str): return mesh.channel(channel, 1)
+        return channel
+    async def _tx(self, src, portnum, payload, ch=None):
+        tx = mesh.build_tx(src, portnum, payload, self._next_seq(), ch or CH)
         await self.send_frame(tx)
         t0 = time.time()                        # wait for TX-done ACK -> flow control
         while time.time() - t0 < 2.0:
@@ -73,21 +77,21 @@ class Device:
             await self.sleep(0.02)
         return False
 
-    async def send_nodeinfo(self, node_id, long_name, short_name, verified=False):
+    async def send_nodeinfo(self, node_id, long_name, short_name, verified=False, channel=None):
         self.require_auth()
         pk = bytes((i * 7 + 3) & 0xff for i in range(32)) if verified else None
         u = mesh.user_pb(node_id, long_name, short_name, hw=(255 if verified else 38), public_key=pk)
-        return await self._tx(node_id, 4, mesh.data_pb(4, u))
-    async def send_position(self, node_id, lat, lon, alt=100):
+        return await self._tx(node_id, 4, mesh.data_pb(4, u), self._ch(channel))
+    async def send_position(self, node_id, lat, lon, alt=100, channel=None):
         self.require_auth()
-        return await self._tx(node_id, 3, mesh.data_pb(3, mesh.position_pb(lat, lon, alt, _now())))
-    async def send_text(self, src, text):
+        return await self._tx(node_id, 3, mesh.data_pb(3, mesh.position_pb(lat, lon, alt, _now())), self._ch(channel))
+    async def send_text(self, src, text, channel=None):
         self.require_auth()
-        return await self._tx(src, 1, mesh.data_pb(1, str(text).encode()))
-    async def send_portnum(self, src, portnum, payload):
+        return await self._tx(src, 1, mesh.data_pb(1, str(text).encode()), self._ch(channel))
+    async def send_portnum(self, src, portnum, payload, channel=None):
         self.require_auth()
         pl = payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode()
-        return await self._tx(src, portnum, mesh.data_pb(portnum, pl))
+        return await self._tx(src, portnum, mesh.data_pb(portnum, pl), self._ch(channel))
 
     async def monitor(self, seconds=20):
         PORTS = {0: 'UNKNOWN', 1: 'TEXT', 3: 'POSITION', 4: 'NODEINFO', 5: 'ROUTING',

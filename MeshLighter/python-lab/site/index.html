@@ -11,13 +11,46 @@
 </head>
 <body>
 <main class="app-shell">
+  <header class="intro">
+    <div class="intro-head">
+      <div>
+        <div class="intro-eyebrow">LoRa mesh research · Meshtastic</div>
+        <h1 class="intro-title">MeshLighter</h1>
+        <p class="intro-lede">A hands-on toolkit for the class. Watch a Meshtastic mesh decode live in the
+          browser, drive the radio from Python, and see the whole network on a tactical map. Passive tools
+          run for anyone. Anything that transmits stays behind an authorization affirmation.</p>
+      </div>
+      <div class="intro-here">You are in the <strong>Python Lab</strong></div>
+    </div>
+    <nav class="intro-links" aria-label="Project">
+      <a class="tile" href="viz/">
+        <span class="t-name">Visualizer →</span>
+        <span class="t-desc">Tactical HUD, Neural Mesh, and a live GPS map over one decoded model.</span>
+      </a>
+      <a class="tile" href="viz/?style=map">
+        <span class="t-name">Live map →</span>
+        <span class="t-desc">Every node that shares a position, plotted on a dark basemap.</span>
+      </a>
+      <a class="tile" href="#lab">
+        <span class="t-name">The Lab ↓</span>
+        <span class="t-desc">Write Python, drive a connected radio-pipe. Scan, monitor, inject.</span>
+      </a>
+      <a class="tile" href="https://github.com/RetiaLLC/MeshLighter">
+        <span class="t-name">Source ↗</span>
+        <span class="t-desc">Firmware, browser suite, and the toolkit on GitHub.</span>
+      </a>
+    </nav>
+    <p class="intro-start">Start: connect a radio-pipe Nibble below, or add <code>?demo=1</code> to try the lab
+      against a mock device. Pick a script from the demo menu, then Run.</p>
+  </header>
+
   <section class="compatibility-banner" id="compatibilityBanner" hidden>
     <h2>Web Serial is not available in this browser</h2>
     <p>Use Chrome, Edge, Opera or another Chromium browser over HTTPS or localhost.
        Add <code>?demo=1</code> to the URL to try the lab against a mock radio-pipe.</p>
   </section>
 
-  <section class="tool-card">
+  <section class="tool-card" id="lab">
     <div class="toolbar">
       <div class="brand">
         <h1>MeshLighter <span>Python Lab</span></h1>

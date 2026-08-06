@@ -27,14 +27,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          # Root drops straight into the visualizer (Tactical HUD + Neural Mesh over one model).
-          cp -r MeshLighter/hud/. _site/
-          # The Python lab (scripting + gated flasher) lives under /lab/.
-          cp -r MeshLighter/python-lab/site _site/lab
+          # Root is the Python Lab: the front door, with an intro and links to the rest.
+          cp -r MeshLighter/python-lab/site/. _site/
+          # The visualizer (Tactical HUD + Neural Mesh + Map over one model) lives under /viz/.
+          cp -r MeshLighter/hud _site/viz
           touch _site/.nojekyll
           echo 'meshlighter.site' > _site/CNAME    # custom domain, kept across redeploys
-          # The offensive CLI toolkit must never ship in the hosted site.
-          rm -rf _site/lab/toolkit
+          # The offensive CLI toolkit and local build cruft must never ship in the hosted site.
+          rm -rf _site/toolkit _site/__pycache__
+          # Keep the old /lab/ URL working (the lab is the root now).
+          mkdir -p _site/lab
+          printf '<!doctype html><meta http-equiv="refresh" content="0; url=/"><a href="/">MeshLighter</a>' > _site/lab/index.html
           echo "Published tree:"; find _site -maxdepth 2 | sort
       - uses: actions/upload-pages-artifact@v3
         with:

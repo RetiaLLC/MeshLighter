@@ -1,9 +1,12 @@
 [
-  {"file": "scan.py",           "title": "Spectrum scan (passive)"},
-  {"file": "monitor.py",        "title": "Live monitor (passive)"},
-  {"file": "ghost_fleet.py",    "title": "Ghost fleet (inject)"},
-  {"file": "verified_nodes.py", "title": "Verified / lock nodes (inject)"},
-  {"file": "silent_alarm.py",   "title": "Silent alarm PortNum 77 (inject)"},
-  {"file": "position_spoof.py", "title": "Position spoof (inject)"},
-  {"file": "private_channel.py","title": "Private channel (config)"}
+  {"file": "scan.py",            "title": "Spectrum scan (passive)"},
+  {"file": "monitor.py",         "title": "Live monitor (passive)"},
+  {"file": "ghost_fleet.py",     "title": "Ghost fleet (inject)"},
+  {"file": "verified_nodes.py",  "title": "Verified / lock nodes (inject)"},
+  {"file": "channel_message.py", "title": "Channel message (inject)"},
+  {"file": "chatter.py",         "title": "Scripted chatter (inject)"},
+  {"file": "svg_shape.py",       "title": "SVG shape on the map (inject)"},
+  {"file": "silent_alarm.py",    "title": "Silent alarm PortNum 77 (inject)"},
+  {"file": "position_spoof.py",  "title": "Position spoof (inject)"},
+  {"file": "private_channel.py", "title": "Private channel (config)"}
 ]
