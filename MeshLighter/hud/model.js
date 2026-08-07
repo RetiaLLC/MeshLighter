@@ -80,7 +80,7 @@
       if (p.temp != null) n.temp = p.temp;
       if (p.humidity != null) n.humidity = p.humidity;
       if (p.pressure != null) n.pressure = p.pressure;
-      if (p.lat != null) { n.lat = p.lat; n.lon = p.lon; n.alt = p.alt; }
+      if (p.lat != null && p.lon != null) { n.lat = p.lat; n.lon = p.lon; n.alt = p.alt; }
 
       // links (directed traffic + traceroute/neighbor topology)
       if (to && to !== BROADCAST && to !== "0x0") { this.node(to); this.refreshLink(from, to, p.pki ? "dm" : "dir"); }
@@ -93,7 +93,7 @@
         this.messages.push({ t: now, from, sname: n.sname, to, text: n.msg, pki: !!p.pki });
         if (this.messages.length > 120) this.messages.shift();
         this.event("TEXT", `${n.sname}${to && to !== BROADCAST ? "→" + this.node(to).sname : ""}: ${n.msg}`, from);
-      } else if (ty === "position" && p.lat != null) {
+      } else if (ty === "position" && p.lat != null && p.lon != null) {
         this.event("POS", `${n.sname} @ ${p.lat.toFixed(4)},${p.lon.toFixed(4)}${p.alt != null ? " " + p.alt + "m" : ""}`, from);
       } else if (ty === "telemetry") {
         const bits = [];

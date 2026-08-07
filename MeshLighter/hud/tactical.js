@@ -437,7 +437,7 @@ window.Tactical = (function () {
       ["Battery", n.battery != null ? n.battery + "%" + (n.voltage ? "  " + n.voltage + " V" : "") : "—"]];
     if (n.chanUtil != null || n.airUtil != null) rows.push(["Airtime", (n.chanUtil != null ? "ch " + n.chanUtil + "%" : "") + (n.airUtil != null ? "   tx " + n.airUtil + "%" : "")]);
     if (n.temp != null || n.humidity != null) rows.push(["Environment", (n.temp != null ? n.temp + " °C" : "") + (n.humidity != null ? "   " + n.humidity + "% rh" : "")]);
-    if (n.lat != null) rows.push(["Position", n.lat.toFixed(5) + ", " + n.lon.toFixed(5) + (n.alt != null ? "  " + n.alt + " m" : "")]);
+    if (n.lat != null && n.lon != null) rows.push(["Position", n.lat.toFixed(5) + ", " + n.lon.toFixed(5) + (n.alt != null ? "  " + n.alt + " m" : "")]);
     rows.push(["Security", n.pki ? "PKI key on file" : "no key seen"]);
     rows.push(["Traffic", n.count + " pkts   first heard " + ago(n.firstHeard) + " ago"]);
     const w = 356, h = 34 + rows.length * 17 + 6, x = width / 2 - w / 2, y = 58;

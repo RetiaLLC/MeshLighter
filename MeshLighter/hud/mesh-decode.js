@@ -92,7 +92,8 @@
       if (typeof u[5] === "number") p.hw = u[5]; if (typeof u[7] === "number") p.role = u[7];
       if (u[8] instanceof Uint8Array && u[8].length === 32) p.hasKey = true;
     } else if (portnum === 3 && body) { const q = readPb(body); p.type = "position";
-      if (q[1] instanceof Uint8Array) p.lat = i32(q[1]) * 1e-7; if (q[2] instanceof Uint8Array) p.lon = i32(q[2]) * 1e-7;
+      // lat and lon only count as a fix together — a partial/corrupted position must not yield one without the other
+      if (q[1] instanceof Uint8Array && q[2] instanceof Uint8Array) { p.lat = i32(q[1]) * 1e-7; p.lon = i32(q[2]) * 1e-7; }
       if (typeof q[3] === "number") p.alt = q[3] | 0;
     } else if (portnum === 67 && body) { const t = readPb(body); p.type = "telemetry";
       const dm = t[2] instanceof Uint8Array ? readPb(t[2]) : null, em = t[3] instanceof Uint8Array ? readPb(t[3]) : null;
