@@ -21,7 +21,10 @@ function renderer() {
 }
 function draw() { renderer().draw(window.VizSource.status()); }
 function mouseWheel(e) { const r = renderer(); if (r.onWheel) r.onWheel(e.deltaY, mouseX, mouseY); return false; }
-function mousePressed() { const r = renderer(); if (r.onClick) r.onClick(mouseX, mouseY); }
+function mousePressed() { const r = renderer(); if (r.onPress) r.onPress(mouseX, mouseY); else if (r.onClick) r.onClick(mouseX, mouseY); }
+function mouseDragged() { const r = renderer(); if (r.onDrag) r.onDrag(mouseX, mouseY, mouseX - pmouseX, mouseY - pmouseY); }
+function mouseReleased() { const r = renderer(); if (r.onRelease) r.onRelease(); }
+function mouseMoved() { const r = renderer(); if (r.onMove) { const c = r.onMove(mouseX, mouseY); cursor(c || "default"); } }
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
 function keyPressed() {
   if (key === "m" || key === "M") document.getElementById("ui-overlay").classList.toggle("hidden");

@@ -30,8 +30,16 @@ window.Tactical = (function () {
   const roleColor = (n) => ROLECOL[roleName(n)] || C.cyan;
   const HUD = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
+  // resizable layout fractions (persisted): left/right column widths, footer height, map/graph split
+  const LAYOUT_KEY = "meshlighter.layout";
+  const DEFAULT_LAYOUT = { left: 0.29, right: 0.24, foot: 0.2, map: 0.56 };
+  function loadLayout() { try { return { ...DEFAULT_LAYOUT, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}")) }; } catch (e) { return { ...DEFAULT_LAYOUT }; } }
+  function saveLayout() { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(S.layout)); } catch (e) {} }
+
   const S = { rosterScroll: 0, feedScroll: 0, msgScroll: 0, sweep: 0, fx: new Map(),
-    selected: null, hits: [], rosterHits: [], detailRect: null };   // hits = clickable node targets
+    selected: null, hits: [], rosterHits: [], detailRect: null,   // hits = clickable node targets
+    mapView: null, mapRect: null, mapBbox: null, mapFitBtn: null,  // pan/zoom state for the map panel
+    layout: loadLayout(), geom: null, dividers: [], dragDivider: null, hoverDivider: null, press: null };
   const F = () => window.MeshModel;
 
   // ---- primitives -------------------------------------------------------------
@@ -343,10 +351,12 @@ window.Tactical = (function () {
     const now = performance.now();
     const nodes = [...m.nodes.values()].filter((n) => n.lat != null && n.lon != null && now - n.lastHeard < 300000);
     const box = { x: r.x, y: r.y, w: r.w, h: r.h };
+    S.mapRect = box;
     push(); drawingContext.save(); drawingContext.beginPath(); drawingContext.rect(r.x, r.y, r.w, r.h); drawingContext.clip();
     noStroke(); fill(6, 12, 18); rect(r.x, r.y, r.w, r.h);
     if (!nodes.length) {
       drawingContext.restore(); pop();
+      S.mapBbox = null; S.mapFitBtn = null;
       t("no GPS fixes yet", r.x + r.w / 2, r.y + r.h / 2 - 12, C.muted, 12, CENTER);
       t("nodes appear here once they broadcast a Position (portnum 3)", r.x + r.w / 2, r.y + r.h / 2 + 6, C.dim, 9.5, CENTER);
       return;
@@ -355,8 +365,9 @@ window.Tactical = (function () {
     for (const n of nodes) { a0 = Math.min(a0, n.lat); a1 = Math.max(a1, n.lat); o0 = Math.min(o0, n.lon); o1 = Math.max(o1, n.lon); }
     const pa = (a1 - a0) * 0.35 + 0.0016, po = (o1 - o0) * 0.35 + 0.0016;
     const bbox = { minLat: a0 - pa, maxLat: a1 + pa, minLon: o0 - po, maxLon: o1 + po };
-    const tiles = window.MapTiles.draw(drawingContext, bbox, box);
-    const proj = tiles.loaded ? tiles.proj : window.MapTiles.flatProj(bbox, box).proj;
+    S.mapBbox = bbox;
+    const tiles = window.MapTiles.draw(drawingContext, bbox, box, S.mapView);   // S.mapView overrides auto-fit once the user zooms/pans
+    const proj = tiles.proj;
     if (!tiles.loaded) {   // basemap still loading (or offline) — a faint graticule so it is never blank
       stroke(C.grid); strokeWeight(1);
       for (let i = 1; i < 6; i++) { const gx = r.x + r.w * i / 6, gy = r.y + r.h * i / 6; line(gx, r.y, gx, r.y + r.h); line(r.x, gy, r.x + r.w, gy); }
@@ -372,15 +383,20 @@ window.Tactical = (function () {
       noStroke(); if (now - n.lastHeard < 1500) { fill(C.ink); ellipse(p.x, p.y, 12, 12); }
       fill(c); ellipse(p.x, p.y, 7, 7); drawingContext.restore();
       t(n.sname, p.x + 6, p.y - 5, C.ink, 8.5);
-      S.hits.push({ id: n.id, x: p.x, y: p.y, r: 9 });
+      if (p.x > r.x - 2 && p.x < r.x + r.w + 2 && p.y > r.y - 2 && p.y < r.y + r.h + 2) S.hits.push({ id: n.id, x: p.x, y: p.y, r: 9 });   // only click on-screen markers
     }
     drawingContext.restore(); pop();
-    const mpp = window.MapTiles.mPerPx(nodes[0].lat, tiles.z);   // meters per (logical) pixel at this zoom
+    const mpp = window.MapTiles.mPerPx(tiles.lat, tiles.z);   // meters per (logical) pixel at this zoom
     const barKm = niceKm(mpp * 90 / 1000), barPx = barKm * 1000 / mpp;
     stroke(C.muted); strokeWeight(2); line(r.x + 8, r.y + r.h - 10, r.x + 8 + barPx, r.y + r.h - 10);
-    t(barKm >= 1 ? barKm + " km" : (barKm * 1000) + " m", r.x + 12 + barPx, r.y + r.h - 16, C.muted, 8.5);
+    t((barKm >= 1 ? barKm + " km" : (barKm * 1000) + " m") + "  ·  z" + tiles.z, r.x + 12 + barPx, r.y + r.h - 16, C.muted, 8.5);
     t(window.MapTiles.ATTRIB, r.x + 8, r.y + 3, C.dim, 8);
     t(nodes.length + " positioned · " + (m.nodes.size - nodes.length) + " no fix", r.x + r.w, r.y + r.h - 14, C.dim, 8.5, RIGHT);
+    if (S.mapView) {   // manual view: offer a reset-to-fit button
+      const bw = 42, bh = 15, bx = r.x + r.w - bw - 6, by = r.y + 3;
+      noStroke(); fill(6, 14, 20, 235); rect(bx, by, bw, bh, 3); stroke(C.line2); strokeWeight(1); noFill(); rect(bx, by, bw, bh, 3);
+      noStroke(); t("⟲ fit", bx + 7, by + 3, C.cyan, 9); S.mapFitBtn = { x: bx, y: by, w: bw, h: bh };
+    } else S.mapFitBtn = null;
   }
 
   // ---- RSSI ranking (relative signal strength, strongest first) ---------------
@@ -407,15 +423,17 @@ window.Tactical = (function () {
     background(C.bg);
     F().prune();
     S.hits = []; S.rosterHits = [];
-    const W = width, H = height, p = 12;
-    const headH = 46, footH = Math.max(120, H * 0.2);
+    const W = width, H = height, p = 12, L = S.layout;
+    const headH = 46, footH = constrain(H * L.foot, 120, H * 0.5);
     const bodyY = p + headH + p, bodyH = H - bodyY - footH - p * 2;
-    const leftW = Math.min(430, W * 0.29), rightW = Math.min(320, W * 0.24);
+    const leftW = constrain(W * L.left, 180, W * 0.5), rightW = constrain(W * L.right, 170, W * 0.44);
     const centerX = p + leftW + p, centerW = W - leftW - rightW - p * 4;
+    const mapH = bodyH * L.map - p / 2, graphY = bodyY + bodyH * L.map + p / 2, graphH = bodyH * (1 - L.map) - p / 2;
+    S.geom = { W, H, p, bodyY, bodyH, centerX, centerW };
     header(p, p, W - p * 2, headH, status);
     roster(p, bodyY, leftW, bodyH);
-    mapPanel(centerX, bodyY, centerW, bodyH * 0.56 - p / 2);
-    graph(centerX, bodyY + bodyH * 0.56 + p / 2, centerW, bodyH * 0.44 - p / 2);
+    mapPanel(centerX, bodyY, centerW, mapH);
+    graph(centerX, graphY, centerW, graphH);
     const rx = W - p - rightW, th = (bodyH - p * 2) / 3;
     traffic(rx, bodyY, rightW, th);
     rssiRank(rx, bodyY + th + p, rightW, th);
@@ -423,8 +441,32 @@ window.Tactical = (function () {
     const availW = W - p * 3, feedW = availW * 0.58;
     feed(p, H - footH - p, feedW, footH);
     messages(p + feedW + p, H - footH - p, availW - feedW, footH);
+    // draggable dividers (sit in the gaps between panels)
+    S.dividers = [
+      { key: "left", axis: "v", x: p + leftW + p / 2, y0: bodyY, y1: bodyY + bodyH },
+      { key: "right", axis: "v", x: W - p - rightW - p / 2, y0: bodyY, y1: bodyY + bodyH },
+      { key: "map", axis: "h", y: bodyY + bodyH * L.map, x0: centerX, x1: centerX + centerW },
+      { key: "foot", axis: "h", y: H - footH - p - p / 2 + 1, x0: p, x1: W - p },
+    ];
+    dividers();
     detail();
   }
+  function dividers() {
+    for (const d of S.dividers) {
+      const hot = (S.hoverDivider === d.key) || (S.dragDivider && S.dragDivider.key === d.key);
+      stroke(hot ? C.cyan : C.line); strokeWeight(hot ? 2 : 1);
+      if (d.axis === "v") { line(d.x, d.y0 + 6, d.x, d.y1 - 6); const cy = (d.y0 + d.y1) / 2; noStroke(); fill(hot ? C.cyan : C.line2); for (let i = -1; i <= 1; i++) ellipse(d.x, cy + i * 5, 2.6, 2.6); }
+      else { line(d.x0 + 6, d.y, d.x1 - 6, d.y); const cx = (d.x0 + d.x1) / 2; noStroke(); fill(hot ? C.cyan : C.line2); for (let i = -1; i <= 1; i++) ellipse(cx + i * 5, d.y, 2.6, 2.6); }
+    }
+  }
+  function hitDivider(mx, my) {
+    for (const d of S.dividers) {
+      if (d.axis === "v" && Math.abs(mx - d.x) < 6 && my > d.y0 && my < d.y1) return d;
+      if (d.axis === "h" && Math.abs(my - d.y) < 6 && mx > d.x0 && mx < d.x1) return d;
+    }
+    return null;
+  }
+  const inMap = (mx, my) => S.mapRect && mx > S.mapRect.x && mx < S.mapRect.x + S.mapRect.w && my > S.mapRect.y && my < S.mapRect.y + S.mapRect.h;
 
   // ---- click-to-inspect a node ------------------------------------------------
   const ago = (t0) => { const s = (performance.now() - t0) / 1000; return s < 90 ? (s | 0) + "s" : s < 5400 ? (s / 60 | 0) + "m" : (s / 3600 | 0) + "h"; };
@@ -449,6 +491,7 @@ window.Tactical = (function () {
     S.detailRect = { x, y, w, h, cx: x + w - 15, cy: y + 12 };
   }
   function onClick(mx, my) {
+    if (S.mapFitBtn) { const b = S.mapFitBtn; if (mx > b.x && mx < b.x + b.w && my > b.y && my < b.y + b.h) { S.mapView = null; return; } }
     if (S.detailRect) { const d = S.detailRect;
       if (Math.hypot(mx - d.cx, my - d.cy) < 13) { S.selected = null; S.detailRect = null; return; }
       if (mx > d.x && mx < d.x + d.w && my > d.y && my < d.y + d.h) return;   // click inside panel: keep open
@@ -460,10 +503,50 @@ window.Tactical = (function () {
   }
 
   function onWheel(dy, mx, my) {
+    if (inMap(mx, my)) {   // scroll over the map = zoom about the cursor
+      if (!S.mapView && S.mapBbox) S.mapView = window.MapTiles.fitView(S.mapBbox, S.mapRect);
+      if (S.mapView) S.mapView = window.MapTiles.zoomAt(S.mapView, mx, my, S.mapRect, dy < 0 ? 1 : -1);
+      return;
+    }
     const inR = (r) => r && mx > r.x - 6 && mx < r.x + r.w + 8 && my > r.y && my < r.y + r.h;
     if (inR(S.rosterRect)) S.rosterScroll += dy > 0 ? 1 : -1;
     else if (inR(S.feedRect)) S.feedScroll += dy > 0 ? 1 : -1;
     else if (inR(S.msgRect)) S.msgScroll += dy > 0 ? -1 : 1;   // chat-style: down = newer, up = older
   }
-  return { draw, onWheel, onClick, select: (id) => { S.selected = id; } };
+
+  // ---- pointer: dividers resize panels, dragging the map pans it, a plain click selects ----
+  function onPress(mx, my) {
+    const d = hitDivider(mx, my);
+    if (d) { S.dragDivider = d; S.press = { mx, my, mode: "divider", moved: false }; return; }
+    S.press = { mx, my, mode: inMap(mx, my) ? "map" : "click", moved: false };
+  }
+  function onDrag(mx, my, dx, dy) {
+    if (!S.press) return;
+    if (Math.abs(mx - S.press.mx) + Math.abs(my - S.press.my) > 3) S.press.moved = true;
+    const g = S.geom; if (!g) return;
+    if (S.press.mode === "divider" && S.dragDivider) {
+      const d = S.dragDivider;
+      if (d.key === "left") S.layout.left = constrain(mx / g.W, 0.15, 0.45);
+      else if (d.key === "right") S.layout.right = constrain((g.W - mx) / g.W, 0.15, 0.42);
+      else if (d.key === "foot") S.layout.foot = constrain((g.H - my) / g.H, 0.12, 0.5);
+      else if (d.key === "map") S.layout.map = constrain((my - g.bodyY) / g.bodyH, 0.28, 0.8);
+    } else if (S.press.mode === "map" && S.press.moved) {
+      if (!S.mapView && S.mapBbox) S.mapView = window.MapTiles.fitView(S.mapBbox, S.mapRect);
+      if (S.mapView) S.mapView = window.MapTiles.panBy(S.mapView, dx, dy, S.mapRect);
+    }
+  }
+  function onRelease() {
+    if (S.press) {
+      if (!S.press.moved && (S.press.mode === "click" || S.press.mode === "map")) onClick(S.press.mx, S.press.my);
+      if (S.dragDivider && S.press.moved) saveLayout();
+    }
+    S.press = null; S.dragDivider = null;
+  }
+  function onMove(mx, my) {
+    const d = hitDivider(mx, my); S.hoverDivider = d ? d.key : null;
+    if (d) return d.axis === "v" ? "ew-resize" : "ns-resize";
+    if (inMap(mx, my)) return "grab";
+    return "default";
+  }
+  return { draw, onWheel, onClick, onPress, onDrag, onRelease, onMove, select: (id) => { S.selected = id; } };
 })();
